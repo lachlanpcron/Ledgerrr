@@ -952,7 +952,10 @@ function openMetricModal(type) {
     total = txList.reduce(function(s,t) { return s+t.amount; }, 0);
     title = "Total Spent"; color = "var(--red)";
   } else {
-    txList = allTxs.filter(function(t) { return t.type === "credit" && t.category !== "transfers"; });
+    txList = allTxs.filter(function(t) {
+      return t.type === "credit" && t.category === "income" &&
+        t.description.toLowerCase().indexOf("opening balance") === -1;
+    });
     total = txList.reduce(function(s,t) { return s+t.amount; }, 0);
     title = "Income"; color = "var(--green)";
   }
@@ -1080,7 +1083,10 @@ function render() {
   var cm = curMonth(), cw = curWeek();
   var allTxs = periodTxs("all");
   var spendTxs = allTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance" && t.description.toLowerCase().indexOf("opening balance") === -1; });
-  var incomeTxs = allTxs.filter(function(t) { return t.type === "credit" && t.category !== "transfers"; });
+  var incomeTxs = allTxs.filter(function(t) {
+    return t.type === "credit" && t.category === "income" &&
+      t.description.toLowerCase().indexOf("opening balance") === -1;
+  });
   var totalSpend = spendTxs.reduce(function(s,t) { return s+t.amount; }, 0);
   var totalIncome = incomeTxs.reduce(function(s,t) { return s+t.amount; }, 0);
   var net = totalIncome - totalSpend;
