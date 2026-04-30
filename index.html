@@ -1021,6 +1021,54 @@ function saveNote() {
   var note = document.getElementById("note-input").value.trim();
   var onceOff = document.getElementById("note-once-off").checked;
   var linkedAccount = document.getElementById("note-linked-acct").value || null;
+
+  var tx = null;
+  for (var i = 0; i < S.txs.length; i++) { if (S.txs[i].id === noteTargetId) { tx = S.txs[i]; break; } }
+
+  // If linking a transfer, check if matching transaction already exists on other account
+  if (linkedAccount && tx && tx.category === "transfers") {
+    var existingMatch = S.txs.filter(function(t) {
+      return t.account === linkedAccount &&
+        t.category === "transfers" &&
+        t.amount === tx.amount &&
+        t.date === tx.date &&
+        t.linkedAccount === tx.account;
+    });
+    if (!existingMatch.length) {
+      // Auto-create matching transaction on the other account
+      var matchTx = {
+        id: "auto-" + Date.now(),
+        description: "Transfer " + (tx.type === "debit" ? "from" : "to") + " " + tx.account,
+        amount: tx.amount,
+        date: tx.date,
+        type: tx.type === "debit" ? "credit" : "debit",
+        category: "transfers",
+        account: linkedAccount,
+        linkedAccount: tx.account,
+        autoCreated: true
+      };
+      S.txs.push(matchTx);
+      // Make sure the linked account is registered
+      if (S.accounts.indexOf(linkedAccount) === -1) {
+        var isManual = (S.manualAccts||[]).filter(function(a){ return a.name === linkedAccount; }).length > 0;
+        if (!isManual) S.accounts.push(linkedAccount);
+      }
+      setStatus("Auto-created matching transfer on " + linkedAccount, "ok");
+    }
+  }
+
+  // If removing a link, offer to delete the auto-created match
+  var prevLinked = tx ? tx.linkedAccount : null;
+  if (prevLinked && !linkedAccount && tx) {
+    var autoMatch = S.txs.filter(function(t) {
+      return t.account === prevLinked && t.autoCreated && t.linkedAccount === tx.account &&
+        t.amount === tx.amount && t.date === tx.date;
+    });
+    if (autoMatch.length && confirm("Remove the auto-created matching transaction on " + prevLinked + " too?")) {
+      S.txs = S.txs.filter(function(t) { return t.id !== autoMatch[0].id; });
+    }
+  }
+
   S.txs = S.txs.map(function(t) {
     if (t.id !== noteTargetId) return t;
     var updated = JSON.parse(JSON.stringify(t));
@@ -1372,7 +1420,7 @@ function render() {
         var isTransfer = tx.category === "transfers";
         var linkedBadge = isTransfer
           ? (tx.linkedAccount
-            ? '<div style="margin-top:3px"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(124,106,247,0.12);color:var(--accent)">⇄ ' + tx.linkedAccount + '</span></div>'
+            ? '<div style="margin-top:3px"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(124,106,247,0.12);color:var(--accent)">⇄ ' + tx.linkedAccount + '</span>' + (tx.autoCreated ? '<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(106,106,128,0.12);color:var(--muted);margin-left:4px">auto</span>' : '') + '</div>'
             : '<div style="margin-top:2px"><span style="font-size:10px;color:var(--muted)">⇄ tap Note to link account</span></div>')
           : "";
         return '<div class="tx-item">' +
