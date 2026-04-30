@@ -23,13 +23,13 @@ body.light-mode{
 }
 html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica Neue',sans-serif;color:var(--text);overflow-x:hidden}
 #app{max-width:480px;margin:0 auto;min-height:100vh}
-.header{background:var(--bg);border-bottom:1px solid var(--border);padding:16px 20px 0;position:sticky;top:0;z-index:10}
-.header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.header{background:var(--bg);border-bottom:1px solid var(--border);padding:14px 20px;position:sticky;top:0;z-index:10}
+.header-top{display:flex;justify-content:space-between;align-items:center}
 .header-title{font-size:20px;font-weight:700;letter-spacing:-0.03em;background:linear-gradient(135deg,#a89fff,#6c5ce7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.tabs{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
-.tab{flex-shrink:0;background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-size:13px;color:var(--muted);cursor:pointer;font-family:inherit;margin-bottom:-1px;transition:all 0.15s;white-space:nowrap}
-.tab.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+.nav-item{display:block;width:100%;background:none;border:none;padding:13px 18px;font-size:14px;color:var(--text);cursor:pointer;font-family:inherit;text-align:left;border-bottom:1px solid var(--border)}
+.nav-item:last-child{border-bottom:none}
+.nav-item.on{color:var(--accent);font-weight:600;background:rgba(124,106,247,0.07)}
+.nav-item:active{background:var(--surface2)}
 .body{padding:20px}
 .month-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
 .month-btn{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit;transition:all 0.15s}
@@ -353,20 +353,24 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
     <div class="header-top">
       <span class="header-title">Ledger</span>
       <div style="display:flex;align-items:center;gap:8px">
-        <button id="theme-toggle" onclick="toggleTheme()" style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--muted);font-size:14px;cursor:pointer;font-family:inherit">☀</button>
+        <button id="theme-toggle" onclick="toggleTheme()" style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--muted);font-size:14px;cursor:pointer;font-family:inherit">🌙</button>
+        <button onclick="toggleNavMenu()" id="nav-menu-btn" style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px">
+          <span id="nav-current-label">Dashboard</span>
+          <span style="font-size:10px;color:var(--muted)">▾</span>
+        </button>
       </div>
     </div>
-    <div class="tabs">
-      <button class="tab on" onclick="sw('dash',this)">Dashboard</button>
-      <button class="tab" onclick="sw('accounts',this)">Accounts</button>
-      <button class="tab" onclick="sw('cashflow',this)">Cash Flow</button>
-      <button class="tab" onclick="sw('calendar',this)">Calendar</button>
-      <button class="tab" onclick="sw('budget',this)">Budget</button>
-      <button class="tab" onclick="sw('goals',this)">Goals</button>
-      <button class="tab" onclick="sw('debt',this)">Debt</button>
-      <button class="tab" onclick="sw('txs',this)">Transactions</button>
-      <button class="tab" onclick="sw('add',this)">Add Data</button>
-      <button class="tab" onclick="sw('settings',this)">Settings</button>
+    <div id="nav-dropdown" style="display:none;position:absolute;top:56px;right:16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;z-index:50;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,0.18);overflow:hidden">
+      <button class="nav-item on" onclick="swDrop('dash','Dashboard')">Dashboard</button>
+      <button class="nav-item" onclick="swDrop('accounts','Accounts')">Accounts</button>
+      <button class="nav-item" onclick="swDrop('cashflow','Cash Flow')">Cash Flow</button>
+      <button class="nav-item" onclick="swDrop('calendar','Calendar')">Calendar</button>
+      <button class="nav-item" onclick="swDrop('budget','Budget')">Budget</button>
+      <button class="nav-item" onclick="swDrop('goals','Goals')">Goals</button>
+      <button class="nav-item" onclick="swDrop('debt','Debt')">Debt</button>
+      <button class="nav-item" onclick="swDrop('txs','Transactions')">Transactions</button>
+      <button class="nav-item" onclick="swDrop('add','Add Data')">Add Data</button>
+      <button class="nav-item" onclick="swDrop('settings','Settings')">Settings</button>
     </div>
   </div>
 
@@ -778,7 +782,7 @@ var S = {
   calYear: new Date().getFullYear(), calMonth: new Date().getMonth(),
   calSelectedDay: null, lastSeenPayday: null,
   pieExpanded: false, weeklyExpanded: true, darkMode: false,
-  acctExpanded: {}, budgetEditing: false
+  acctExpanded: {}, budgetEditing: false, txDayExpanded: {}
 };
 var noteTargetId = null;
 
@@ -1320,13 +1324,46 @@ function render() {
   // Tx list
   var filt = periodTxs(S.acctFilter);
   var sortedTx = filt.slice().sort(function(a,b) { return new Date(b.date)-new Date(a.date); });
+  // Tx list — grouped by day, collapsible
   var txList = document.getElementById("tx-list");
   if (!sortedTx.length) { txList.innerHTML = '<div class="empty">No transactions for this period</div>'; }
   else {
-    txList.innerHTML = sortedTx.map(function(tx) {
-      var opts = S.cats.map(function(c) { return '<option value="' + c.id + '"' + (c.id === tx.category ? " selected" : "") + '>' + c.label + '</option>'; }).join("");
-      var hasNote = tx.note || tx.onceOff;
-      return '<div class="tx-item"><div class="tx-top"><span class="tx-desc" title="' + tx.description + '">' + tx.description + (tx.onceOff ? '<span class="once-off-badge">once-off</span>' : "") + '</span><span class="tx-amt ' + tx.type + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>' + (tx.note ? '<div class="tx-note-text">📝 ' + tx.note + '</div>' : "") + '<div class="tx-bottom"><span class="tx-meta">' + tx.date + (tx.account ? " · " + tx.account : "") + '</span><div class="tx-actions"><select class="tx-cat-sel" onchange="chCat(\'' + tx.id + '\',this.value)">' + opts + '</select><button class="tx-note-btn' + (hasNote ? " has-note" : "") + '" onclick="openNoteModal(\'' + tx.id + '\')">' + (hasNote ? "📝" : "Note") + '</button><button class="tx-del" onclick="delTx(\'' + tx.id + '\')">×</button></div></div></div>';
+    // Group by date
+    var byDay = {};
+    var dayOrder = [];
+    sortedTx.forEach(function(tx) {
+      if (!byDay[tx.date]) { byDay[tx.date] = []; dayOrder.push(tx.date); }
+      byDay[tx.date].push(tx);
+    });
+    txList.innerHTML = dayOrder.map(function(date) {
+      var dayTxs = byDay[date];
+      var dayTotal = dayTxs.reduce(function(s,t) { return t.type === 'debit' ? s - t.amount : s + t.amount; }, 0);
+      var isOpen = S.txDayExpanded[date] !== false; // default open
+      var d = new Date(date);
+      var dayLabel = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + d.getDate() + ' ' + MO[d.getMonth()];
+      var txHtml = dayTxs.map(function(tx) {
+        var opts = S.cats.map(function(c) { return '<option value="' + c.id + '"' + (c.id === tx.category ? " selected" : "") + '>' + c.label + '</option>'; }).join("");
+        var hasNote = tx.note || tx.onceOff;
+        return '<div class="tx-item">' +
+          '<div class="tx-top"><span class="tx-desc" title="' + tx.description + '">' + tx.description + (tx.onceOff ? '<span class="once-off-badge">once-off</span>' : "") + '</span>' +
+          '<span class="tx-amt ' + tx.type + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>' +
+          (tx.note ? '<div class="tx-note-text">📝 ' + tx.note + '</div>' : "") +
+          '<div class="tx-bottom"><span class="tx-meta">' + (tx.account || "") + '</span>' +
+          '<div class="tx-actions"><select class="tx-cat-sel" onchange="chCat(\'' + tx.id + '\',this.value)">' + opts + '</select>' +
+          '<button class="tx-note-btn' + (hasNote ? " has-note" : "") + '" onclick="openNoteModal(\'' + tx.id + '\')">' + (hasNote ? "📝" : "Note") + '</button>' +
+          '<button class="tx-del" onclick="delTx(\'' + tx.id + '\')">×</button></div></div></div>';
+      }).join("");
+      return '<div style="border-bottom:1px solid var(--border)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;cursor:pointer" onclick="toggleTxDay(\'' + date + '\')">' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:13px;font-weight:600">' + dayLabel + '</span>' +
+        '<span style="font-size:11px;color:var(--muted)">' + dayTxs.length + ' tx</span></div>' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:13px;font-weight:500;color:' + (dayTotal >= 0 ? "var(--green)" : "var(--red)") + '">' + (dayTotal >= 0 ? "+" : "") + '$' + dayTotal.toFixed(2) + '</span>' +
+        '<span style="font-size:12px;color:var(--muted);transform:' + (isOpen ? "rotate(180deg)" : "") + ';display:inline-block">▾</span>' +
+        '</div></div>' +
+        '<div id="txday-' + date + '" style="display:' + (isOpen ? "block" : "none") + '">' + txHtml + '</div>' +
+        '</div>';
     }).join("");
   }
 
@@ -2746,6 +2783,42 @@ function renderBudgetViewMode() {
   el.innerHTML = html;
 }
 
+function toggleNavMenu() {
+  var dd = document.getElementById("nav-dropdown");
+  dd.style.display = dd.style.display === "none" ? "block" : "none";
+}
+
+function swDrop(name, label) {
+  // Close dropdown
+  document.getElementById("nav-dropdown").style.display = "none";
+  // Update label
+  document.getElementById("nav-current-label").textContent = label;
+  // Update active item
+  document.querySelectorAll(".nav-item").forEach(function(b) { b.classList.remove("on"); });
+  var items = document.querySelectorAll(".nav-item");
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].textContent.trim() === label) { items[i].classList.add("on"); break; }
+  }
+  // Show tab
+  var tabs = ["dash","accounts","cashflow","calendar","budget","goals","debt","txs","add","settings"];
+  tabs.forEach(function(t) { document.getElementById("tab-" + t).style.display = t === name ? "block" : "none"; });
+  if (name === "budget") renderBudget();
+  if (name === "goals") renderGoals();
+  if (name === "calendar") renderCalendar();
+}
+
+function toggleTxDay(date) {
+  S.txDayExpanded[date] = S.txDayExpanded[date] === false ? true : false;
+  var el = document.getElementById("txday-" + date);
+  if (el) el.style.display = S.txDayExpanded[date] === false ? "none" : "block";
+  // Rotate chevron
+  var parent = el ? el.previousElementSibling : null;
+  if (parent) {
+    var chevron = parent.querySelector("span:last-child");
+    if (chevron) chevron.style.transform = S.txDayExpanded[date] === false ? "" : "rotate(180deg)";
+  }
+}
+
 function toggleAcct(name) {
   S.acctExpanded[name] = !S.acctExpanded[name];
   render();
@@ -2775,6 +2848,13 @@ function toggleWeeklyTracker() {
 }
 
 window.addEventListener("DOMContentLoaded", loadData);
+document.addEventListener("click", function(e) {
+  var dd = document.getElementById("nav-dropdown");
+  var btn = document.getElementById("nav-menu-btn");
+  if (dd && btn && !dd.contains(e.target) && !btn.contains(e.target)) {
+    dd.style.display = "none";
+  }
+});
 
 // PWA: inject manifest dynamically
 (function() {
