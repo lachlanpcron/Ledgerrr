@@ -469,8 +469,15 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <div class="card-label">Monthly summary</div>
         <div id="budget-summary"></div>
       </div>
-      <div id="budget-sections"></div>
-      <button onclick="addBudgetSection()" style="width:100%;padding:12px;background:none;border:1px dashed var(--border);border-radius:12px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:14px">+ Add section</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-size:13px;color:var(--muted)">Budget items</span>
+        <button id="budget-edit-btn" onclick="toggleBudgetEdit()" style="padding:6px 16px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Edit</button>
+      </div>
+      <div id="budget-view-mode"></div>
+      <div id="budget-edit-mode" style="display:none">
+        <div id="budget-sections"></div>
+        <button onclick="addBudgetSection()" style="width:100%;padding:12px;background:none;border:1px dashed var(--border);border-radius:12px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:14px">+ Add section</button>
+      </div>
     </div>
 
     <div id="tab-goals" style="display:none">
@@ -770,7 +777,8 @@ var S = {
   startBalances: JSON.parse(JSON.stringify(DEFAULT_START_BAL)),
   calYear: new Date().getFullYear(), calMonth: new Date().getMonth(),
   calSelectedDay: null, lastSeenPayday: null,
-  pieExpanded: false, weeklyExpanded: true, darkMode: false
+  pieExpanded: false, weeklyExpanded: true, darkMode: false,
+  acctExpanded: {}, budgetEditing: false
 };
 var noteTargetId = null;
 
@@ -1158,32 +1166,55 @@ function render() {
       var recent = aTxs.slice().sort(function(x,y) { return new Date(y.date)-new Date(x.date); }).slice(0,4);
       var sbId = "sb-" + a.replace(/\s/g,"_");
       var sbVal = (S.startBalances[a] !== undefined ? S.startBalances[a] : 0).toFixed(2);
-      return '<div class="acct-card"><div class="acct-card-header"><div class="acct-name">' + a + '</div><div class="acct-balance"><div class="acct-bal-label">Current balance</div><div class="acct-bal-val" style="color:' + (bal >= 0 ? "var(--green)" : "var(--red)") + '">$' + bal.toFixed(2) + '</div></div></div><div class="acct-stats"><div class="acct-stat"><div class="acct-stat-label">Spent</div><div class="acct-stat-val" style="color:var(--red)">$' + aSpend.toFixed(2) + '</div></div><div class="acct-stat"><div class="acct-stat-label">In</div><div class="acct-stat-val" style="color:var(--green)">$' + aIn.toFixed(2) + '</div></div></div>' + (recent.length ? '<div class="acct-recent-label">Recent</div>' + recent.map(function(tx) { return '<div class="acct-tx"><span class="acct-tx-desc">' + tx.description + '</span><span class="acct-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>'; }).join("") : "") + '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div></div>';
+      return (function() {
+        var isOpen = S.acctExpanded[a] || false;
+        var safeId = a.replace(/\s/g,"_").replace(/[^a-zA-Z0-9_]/g,"");
+        return '<div class="acct-card">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleAcct(\'' + a.replace(/'/g,"\\'") + '\')">' +
+          '<div class="acct-name">' + a + '</div>' +
+          '<div style="display:flex;align-items:center;gap:12px">' +
+          '<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">Balance</div><div style="font-size:16px;font-weight:700;color:' + (bal >= 0 ? "var(--green)" : "var(--red)") + '">$' + bal.toFixed(2) + '</div></div>' +
+          '<span style="font-size:14px;color:var(--muted);transition:transform 0.2s;display:inline-block;transform:' + (isOpen ? "rotate(180deg)" : "") + '">▾</span>' +
+          '</div></div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">' +
+          '<div class="acct-stat"><div class="acct-stat-label">Spent</div><div class="acct-stat-val" style="color:var(--red)">$' + aSpend.toFixed(2) + '</div></div>' +
+          '<div class="acct-stat"><div class="acct-stat-label">In</div><div class="acct-stat-val" style="color:var(--green)">$' + aIn.toFixed(2) + '</div></div>' +
+          '</div>' +
+          '<div id="acct-detail-' + safeId + '" style="display:' + (isOpen ? "block" : "none") + '">' +
+          (recent.length ? '<div class="acct-recent-label">Recent</div>' + recent.map(function(tx) { return '<div class="acct-tx"><span class="acct-tx-desc">' + tx.description + '</span><span class="acct-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>'; }).join("") : "") +
+          '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div>' +
+          '</div>' +
+          '</div>';
+      })();
     }).join("");
   }
 
   if (manualAccts.length) {
     acctHtml += manualAccts.map(function(ma) {
       var typeLabels = { cash:"Cash", savings:"Savings", investment:"Investment", other:"Other" };
-      // Calculate balance from transactions
       var maTxs = S.txs.filter(function(t) { return t.account === ma.name; });
       var maCredits = maTxs.filter(function(t) { return t.type === "credit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
       var maDebits = maTxs.filter(function(t) { return t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
       var maBal = (ma.balance || 0) + maCredits - maDebits;
       var recentMa = maTxs.slice().sort(function(x,y) { return new Date(y.date)-new Date(x.date); }).slice(0,4);
+      var isOpenMa = S.acctExpanded[ma.name] || false;
+      var safeNameMa = ma.name.replace(/\s/g,"_").replace(/[^a-zA-Z0-9_]/g,"");
       return '<div class="acct-card" style="border-color:rgba(124,106,247,0.25)">' +
-        '<div class="acct-card-header">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleAcct(\'' + ma.name.replace(/'/g,"\\'") + '\')">' +
         '<div><div class="acct-name">' + ma.name + '<span class="manual-acct-badge">' + (typeLabels[ma.type] || "Manual") + '</span></div></div>' +
-        '<div class="acct-balance"><div class="acct-bal-label">Balance</div><div class="acct-bal-val" style="color:var(--green)">$' + maBal.toFixed(2) + '</div></div>' +
-        '</div>' +
-        (recentMa.length ? '<div class="acct-recent-label">Recent</div>' + recentMa.map(function(tx) {
+        '<div style="display:flex;align-items:center;gap:12px">' +
+        '<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">Balance</div><div style="font-size:16px;font-weight:700;color:var(--green)">$' + maBal.toFixed(2) + '</div></div>' +
+        '<span style="font-size:14px;color:var(--muted);transition:transform 0.2s;display:inline-block;transform:' + (isOpenMa ? "rotate(180deg)" : "") + '">▾</span>' +
+        '</div></div>' +
+        '<div id="acct-detail-' + safeNameMa + '" style="display:' + (isOpenMa ? "block" : "none") + '">' +
+        (recentMa.length ? '<div class="acct-recent-label" style="margin-top:12px">Recent</div>' + recentMa.map(function(tx) {
           return '<div class="acct-tx"><span class="acct-tx-desc">' + tx.description + '</span><span class="acct-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>';
         }).join("") : "") +
         '<div style="display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border);margin-top:8px">' +
         '<button data-name="' + ma.name + '" onclick="openManualTxModal(this.getAttribute(\'data-name\'))" style="flex:1;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
         '<button onclick="openManualAcctModal(\'' + ma.name.replace(/'/g,"\\'") + '\')" style="padding:10px 12px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit">Edit</button>' +
         '<button data-name="' + ma.name + '" onclick="deleteManualAcct(this.getAttribute(\'data-name\'))" style="padding:10px 12px;background:none;border:1px solid rgba(224,85,85,0.3);border-radius:8px;color:var(--red);font-size:12px;cursor:pointer;font-family:inherit">Del</button>' +
-        '</div></div>';
+        '</div></div></div>';
     }).join("");
   }
 
@@ -1519,6 +1550,12 @@ function renderBudget() {
       '</div>';
   });
   document.getElementById("budget-sections").innerHTML = html;
+  renderBudgetViewMode();
+  // Apply current edit state
+  var viewEl = document.getElementById("budget-view-mode");
+  var editEl = document.getElementById("budget-edit-mode");
+  if (viewEl) viewEl.style.display = S.budgetEditing ? "none" : "block";
+  if (editEl) editEl.style.display = S.budgetEditing ? "block" : "none";
 }
 
 function updateBudgetItem(si, ii, field, val) {
@@ -2634,6 +2671,54 @@ function deleteWeeklyTarget(id) {
 }
 
 // ── UI TOGGLES ────────────────────────────────────────────────────
+function toggleBudgetEdit() {
+  S.budgetEditing = !S.budgetEditing;
+  var btn = document.getElementById("budget-edit-btn");
+  var viewEl = document.getElementById("budget-view-mode");
+  var editEl = document.getElementById("budget-edit-mode");
+  if (btn) {
+    btn.textContent = S.budgetEditing ? "Done" : "Edit";
+    btn.style.background = S.budgetEditing ? "var(--accent)" : "var(--surface)";
+    btn.style.color = S.budgetEditing ? "#fff" : "var(--muted)";
+    btn.style.borderColor = S.budgetEditing ? "var(--accent)" : "var(--border)";
+  }
+  if (viewEl) viewEl.style.display = S.budgetEditing ? "none" : "block";
+  if (editEl) editEl.style.display = S.budgetEditing ? "block" : "none";
+}
+
+function renderBudgetViewMode() {
+  var el = document.getElementById("budget-view-mode");
+  if (!el) return;
+  var html = S.budget.map(function(sec) {
+    var isIncome = sec.name === "Income";
+    return '<div class="card" style="margin-bottom:12px">' +
+      '<div class="card-label" style="margin-bottom:10px">' + sec.name + '</div>' +
+      sec.items.map(function(item) {
+        var monthly = itemMonthly(item);
+        var weekly = monthly / 4.33;
+        var amtStr = item.incomeLinked
+          ? (item.incomePct + "% of income = $" + monthly.toFixed(0) + "/mo")
+          : item.isPct
+          ? (item.amount + "% = $" + monthly.toFixed(0) + "/mo")
+          : "$" + monthly.toFixed(0) + "/mo · $" + weekly.toFixed(0) + "/wk";
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
+          '<span style="font-size:13px">' + item.name + '</span>' +
+          '<span style="font-size:12px;color:var(--muted)">' + amtStr + '</span>' +
+          '</div>';
+      }).join("") +
+      '<div style="display:flex;justify-content:space-between;padding-top:10px;margin-top:2px">' +
+      '<span style="font-size:11px;color:var(--muted)">Total</span>' +
+      '<span style="font-size:12px;font-weight:600;color:' + (isIncome ? "var(--green)" : "var(--text)") + '">$' + sectionMonthly(sec).toFixed(0) + '/mo · $' + (sectionMonthly(sec)/4.33).toFixed(0) + '/wk</span>' +
+      '</div></div>';
+  }).join("");
+  el.innerHTML = html;
+}
+
+function toggleAcct(name) {
+  S.acctExpanded[name] = !S.acctExpanded[name];
+  render();
+}
+
 function toggleTheme() {
   S.darkMode = !S.darkMode;
   document.body.classList.toggle("light-mode", !S.darkMode);
