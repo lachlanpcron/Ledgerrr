@@ -1221,30 +1221,56 @@ function render() {
   acctsList.innerHTML = acctHtml || '<div class="empty">No accounts yet — add data or tap + Add manual account</div>';
 
   // Cash flow
-  var cfSpend = allMonthTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
-  var cfIncome = allMonthTxs.filter(function(t) { return t.type === "credit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+  // Cash flow — exclude opening balances, transfers, and debt account movements
+  var cfExclude = function(t) {
+    if (t.category === "transfers") return true;
+    if (t.category === "opening-balance") return true;
+    if (t.description && t.description.toLowerCase().indexOf("opening balance") !== -1) return true;
+    return false;
+  };
+  var cfTxs = allMonthTxs.filter(function(t) { return !cfExclude(t); });
+  var cfIncome = cfTxs.filter(function(t) { return t.type === "credit" && t.category === "income"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+  var cfSpend = cfTxs.filter(function(t) { return t.type === "debit" && t.category !== "income"; }).reduce(function(s,t) { return s+t.amount; }, 0);
   var cfTransferred = allMonthTxs.filter(function(t) {
     return t.category === "transfers" && t.type === "debit" &&
-      t.description.toLowerCase().indexOf("opening balance") === -1;
+      t.description.toLowerCase().indexOf("opening balance") === -1 &&
+      DEBT_ACCTS.indexOf(t.account) === -1;
   }).reduce(function(s,t) { return s+t.amount; }, 0);
-  var cfNet = cfIncome - cfSpend;
-  document.getElementById("cf-summary").innerHTML = '<div class="cf-row"><span class="cf-label">Income</span><span class="cf-val" style="color:var(--green)">+' + fmt(cfIncome) + '</span></div><div class="cf-row"><span class="cf-label">Spending</span><span class="cf-val" style="color:var(--red)">-' + fmt(cfSpend) + '</span></div><div class="cf-row"><span class="cf-label">Transferred to savings</span><span class="cf-val" style="color:var(--accent)">-' + fmt(cfTransferred) + '</span></div><div class="cf-row" style="border:none"><span class="cf-label" style="font-weight:600;color:var(--text)">Net position</span><span class="cf-val" style="color:' + (cfNet >= 0 ? "var(--green)" : "var(--red)") + '">' + (cfNet >= 0 ? "+" : "") + '$' + cfNet.toFixed(2) + '</span></div>';
+  // Debt repayments — transfers out from debt accounts (Steppay, Mastercard repayments)
+  var cfDebtRepay = allMonthTxs.filter(function(t) {
+    return t.category === "transfers" && t.type === "debit" &&
+      (DEBT_ACCTS.indexOf(t.account) !== -1 || t.description.toLowerCase().indexOf("steppay") !== -1 || t.description.toLowerCase().indexOf("repayment") !== -1);
+  }).reduce(function(s,t) { return s+t.amount; }, 0);
+  var cfNet = cfIncome - cfSpend - cfTransferred - cfDebtRepay;
+  document.getElementById("cf-summary").innerHTML =
+    '<div class="cf-row"><span class="cf-label">Income</span><span class="cf-val" style="color:var(--green)">+' + fmt(cfIncome) + '</span></div>' +
+    '<div class="cf-row"><span class="cf-label">Spending</span><span class="cf-val" style="color:var(--red)">-' + fmt(cfSpend) + '</span></div>' +
+    (cfDebtRepay > 0 ? '<div class="cf-row"><span class="cf-label">Debt repayments</span><span class="cf-val" style="color:var(--orange)">-' + fmt(cfDebtRepay) + '</span></div>' : '') +
+    (cfTransferred > 0 ? '<div class="cf-row"><span class="cf-label">Transferred to savings</span><span class="cf-val" style="color:var(--accent)">-' + fmt(cfTransferred) + '</span></div>' : '') +
+    '<div class="cf-row" style="border:none"><span class="cf-label" style="font-weight:600;color:var(--text)">Net position</span><span class="cf-val" style="color:' + (cfNet >= 0 ? "var(--green)" : "var(--red)") + '">' + (cfNet >= 0 ? "+" : "") + '$' + cfNet.toFixed(2) + '</span></div>';
 
   var cfHist = document.getElementById("cf-history");
   if (!ms.length) { cfHist.innerHTML = '<div class="empty">Not enough data yet</div>'; }
   else {
+    var cfClean = function(txs) {
+      return txs.filter(function(t) {
+        if (t.category === "transfers" || t.category === "opening-balance") return false;
+        if (t.description && t.description.toLowerCase().indexOf("opening balance") !== -1) return false;
+        return true;
+      });
+    };
     var maxAmt = 1;
     ms.forEach(function(m) {
-      var mt = S.txs.filter(function(t) { return mkey(t.date) === m; });
-      var inc = mt.filter(function(t) { return t.type === "credit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
-      var spd = mt.filter(function(t) { return t.type === "debit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+      var mt = cfClean(S.txs.filter(function(t) { return mkey(t.date) === m; }));
+      var inc = mt.filter(function(t) { return t.type === "credit" && t.category === "income"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+      var spd = mt.filter(function(t) { return t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
       if (inc > maxAmt) maxAmt = inc;
       if (spd > maxAmt) maxAmt = spd;
     });
     cfHist.innerHTML = '<div>' + ms.slice(-6).map(function(m) {
-      var mt = S.txs.filter(function(t) { return mkey(t.date) === m; });
-      var inc = mt.filter(function(t) { return t.type === "credit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
-      var spd = mt.filter(function(t) { return t.type === "debit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+      var mt = cfClean(S.txs.filter(function(t) { return mkey(t.date) === m; }));
+      var inc = mt.filter(function(t) { return t.type === "credit" && t.category === "income"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+      var spd = mt.filter(function(t) { return t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
       return '<div class="cf-month-row"><div class="cf-month-label">' + m.split(" ")[0] + '</div><div class="cf-bars"><div class="cf-bar-track"><div class="cf-bar-fill" style="background:var(--green);width:' + ((inc/maxAmt)*100).toFixed(1) + '%"></div></div><div class="cf-bar-track"><div class="cf-bar-fill" style="background:var(--red);width:' + ((spd/maxAmt)*100).toFixed(1) + '%"></div></div></div><div class="cf-month-amt">$' + spd.toFixed(0) + '</div></div>';
     }).join("") + '</div><div style="display:flex;gap:16px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span>Income</span><span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block"></span>Spending</span></div>';
   }
