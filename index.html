@@ -548,18 +548,13 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
   <div class="modal" style="max-height:85vh">
     <div class="modal-handle"></div>
     <div class="modal-header">
-      <div><span class="modal-title">Weekly targets</span><div class="modal-subtitle">Set savings targets to track alongside spending</div></div>
+      <div><span class="modal-title">Savings priority</span><div class="modal-subtitle">Drag or use arrows to set fill order</div></div>
       <button class="modal-close" onclick="closeWeeklySettingsModal()">×</button>
     </div>
     <div class="modal-body" style="padding-top:14px">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Savings targets — tracked automatically from transfers to your Bills/Savings accounts</div>
-      <div id="weekly-targets-list"></div>
-      <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <input class="note-input" type="text" id="new-target-name" placeholder="e.g. Rent, Superloop" style="flex:1;margin-top:0">
-        <input class="note-input" type="number" id="new-target-amt" placeholder="$/wk" style="width:80px;margin-top:0;text-align:right">
-        <button onclick="addWeeklyTarget()" style="padding:8px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap">Add</button>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6">Spending categories are tracked automatically from your budget. Only add savings targets here — things you're setting money aside for each week.</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">Your Bills account balance fills these items in order — top item gets funded first. Reorder to match your priorities.</div>
+      <div id="savings-priority-list"></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6">Items are pulled from your Budget tab. To add or remove items, link or unlink accounts in Budget → Edit.</div>
     </div>
   </div>
 </div>
@@ -789,7 +784,8 @@ var S = {
   calYear: new Date().getFullYear(), calMonth: new Date().getMonth(),
   calSelectedDay: null, lastSeenPayday: null,
   pieExpanded: false, weeklyExpanded: true, darkMode: false,
-  acctExpanded: {}, budgetEditing: false, txDayExpanded: {}
+  acctExpanded: {}, budgetEditing: false, txDayExpanded: {},
+  savingsPriority: []
 };
 var noteTargetId = null;
 
@@ -812,6 +808,7 @@ function loadData() {
   S.calEvents = loadCalEvents();
   S.manualAccts = loadManualAccts();
   S.weeklyTargets = loadWeeklyTargets();
+  try { var sp = localStorage.getItem("ldg-spriority"); if (sp) S.savingsPriority = JSON.parse(sp); } catch(e) {}
   try { var lsp = localStorage.getItem("ldg-lsp"); if (lsp) S.lastSeenPayday = lsp; } catch(e) {}
   try {
     var theme = localStorage.getItem("ldg-theme");
@@ -2703,23 +2700,34 @@ function renderWeeklyTracker() {
     spendRows.push({ label: cat.label, color: cat.color, spent: net, budget: weeklyBudget });
   });
 
-  // Savings targets from budget items linked to accounts
-  // Shows account balance as % of monthly target (how much of the bill is covered)
+  // Savings targets — priority allocation using saved order
   var savingsRows = [];
-  var seenAccts = {};
-  S.budget.forEach(function(sec) {
-    sec.items.forEach(function(item) {
-      if (!item.linkedAccount) return;
-      var monthlyTarget = itemMonthly(item);
-      if (monthlyTarget <= 0) return;
-      var bal = acctBalance(item.linkedAccount);
-      // Track multiple items linked to same account — accumulate target
-      var key = item.linkedAccount + "||" + item.name;
-      if (!seenAccts[key]) seenAccts[key] = { label: item.name, account: item.linkedAccount, balance: bal, target: 0 };
-      seenAccts[key].target += monthlyTarget / 4.33;
+  var acctBals = {};
+  var linkedItems = getLinkedItems();
+
+  // Get account balances once
+  linkedItems.forEach(function(item) {
+    if (acctBals[item.account] === undefined) {
+      acctBals[item.account] = Math.max(0, acctBalance(item.account));
+    }
+  });
+
+  // Allocate balance in priority order per account
+  var acctRemaining = {};
+  Object.keys(acctBals).forEach(function(a) { acctRemaining[a] = acctBals[a]; });
+
+  linkedItems.forEach(function(item) {
+    var remaining = acctRemaining[item.account] || 0;
+    var claimed = Math.min(remaining, item.weeklyTarget);
+    acctRemaining[item.account] = Math.max(0, remaining - claimed);
+    savingsRows.push({
+      label: item.label,
+      account: item.account,
+      saved: claimed,
+      target: item.weeklyTarget,
+      accountBalance: acctBals[item.account]
     });
   });
-  Object.keys(seenAccts).forEach(function(k) { savingsRows.push(seenAccts[k]); });
 
   if (!spendRows.length && !savingsRows.length) {
     bodyEl.innerHTML = '<div class="empty" style="padding:16px 0">No transactions this week yet</div>';
@@ -2749,12 +2757,12 @@ function renderWeeklyTracker() {
   if (savingsRows.length) {
     html += '<div class="wt-section-label">Saving for</div>';
     html += savingsRows.map(function(row) {
-      var pct = row.target > 0 ? Math.min(100, (row.balance / row.target) * 100) : 0;
+      var pct = row.target > 0 ? Math.min(100, (row.saved / row.target) * 100) : 0;
       var barColor = pct >= 100 ? "var(--green)" : pct >= 60 ? "#e8c44a" : "var(--accent)";
       return '<div class="wt-row">' +
         '<div class="wt-header">' +
         '<div><span class="wt-label">' + row.label + '</span><span style="font-size:11px;color:var(--muted);margin-left:6px">← ' + row.account + '</span></div>' +
-        '<div class="wt-amounts"><span class="wt-spent" style="color:var(--accent)">$' + row.balance.toFixed(0) + '</span><span class="wt-budget">of $' + row.target.toFixed(0) + '/wk</span><span class="wt-pct" style="color:' + barColor + '">' + Math.round(pct) + '%</span></div>' +
+        '<div class="wt-amounts"><span class="wt-spent" style="color:var(--accent)">$' + row.saved.toFixed(0) + '</span><span class="wt-budget">of $' + row.target.toFixed(0) + '/wk</span><span class="wt-pct" style="color:' + barColor + '">' + Math.round(pct) + '%</span></div>' +
         '</div>' +
         '<div class="wt-bar-bg"><div class="wt-bar-fill" style="width:' + pct.toFixed(1) + '%;background:' + barColor + '"></div></div>' +
         '</div>';
@@ -2777,7 +2785,7 @@ function renderWeeklyTracker() {
 }
 
 function openWeeklySettingsModal() {
-  renderWeeklyTargetsList();
+  renderSavingsPriorityList();
   document.getElementById("weekly-settings-overlay").classList.add("open");
   document.body.style.overflow = "hidden";
 }
@@ -2786,6 +2794,69 @@ function closeWeeklySettingsModal() {
   document.body.style.overflow = "";
 }
 function closeWeeklySettingsOutside(e) { if (e.target === document.getElementById("weekly-settings-overlay")) closeWeeklySettingsModal(); }
+
+function getLinkedItems() {
+  // Get all budget items with a linked account, in current priority order
+  var items = [];
+  S.budget.forEach(function(sec) {
+    sec.items.forEach(function(item) {
+      if (!item.linkedAccount) return;
+      var monthlyTarget = itemMonthly(item);
+      if (monthlyTarget <= 0) return;
+      items.push({ key: sec.name + "||" + item.name, label: item.name, account: item.linkedAccount, weeklyTarget: monthlyTarget / 4.33 });
+    });
+  });
+  // Apply saved priority order
+  var priority = S.savingsPriority || [];
+  if (priority.length) {
+    items.sort(function(a, b) {
+      var ai = priority.indexOf(a.key);
+      var bi = priority.indexOf(b.key);
+      if (ai === -1) ai = 999;
+      if (bi === -1) bi = 999;
+      return ai - bi;
+    });
+  }
+  return items;
+}
+
+function saveSavingsPriority() {
+  localStorage.setItem("ldg-spriority", JSON.stringify(S.savingsPriority));
+}
+
+function moveSavingsPriority(key, dir) {
+  var items = getLinkedItems();
+  var keys = items.map(function(i) { return i.key; });
+  var idx = keys.indexOf(key);
+  var swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= keys.length) return;
+  var tmp = keys[idx];
+  keys[idx] = keys[swapIdx];
+  keys[swapIdx] = tmp;
+  S.savingsPriority = keys;
+  saveSavingsPriority();
+  renderSavingsPriorityList();
+  renderWeeklyTracker();
+}
+
+function renderSavingsPriorityList() {
+  var el = document.getElementById("savings-priority-list");
+  if (!el) return;
+  var items = getLinkedItems();
+  if (!items.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:10px 0">No linked accounts found — go to Budget → Edit and set "Track in" on your bill items.</div>';
+    return;
+  }
+  el.innerHTML = items.map(function(item, i) {
+    return '<div class="priority-row">' +
+      '<div class="priority-num">' + (i+1) + '</div>' +
+      '<div style="flex:1"><div class="priority-name">' + item.label + '</div><div class="priority-acct">$' + item.weeklyTarget.toFixed(0) + '/wk ← ' + item.account + '</div></div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px">' +
+      (i > 0 ? '<button data-key="' + item.key + '" onclick="moveSavingsPriority(this.getAttribute(\'data-key\'),-1)" style="width:44px;height:44px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center">↑</button>' : '<div style="width:44px;height:44px"></div>') +
+      (i < items.length-1 ? '<button data-key="' + item.key + '" onclick="moveSavingsPriority(this.getAttribute(\'data-key\'),1)" style="width:44px;height:44px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center">↓</button>' : '<div style="width:44px;height:44px"></div>') +
+      '</div></div>';
+  }).join("");
+}
 
 function renderWeeklyTargetsList() {
   var el = document.getElementById("weekly-targets-list");
