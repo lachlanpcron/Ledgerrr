@@ -770,7 +770,7 @@ var S = {
   startBalances: JSON.parse(JSON.stringify(DEFAULT_START_BAL)),
   calYear: new Date().getFullYear(), calMonth: new Date().getMonth(),
   calSelectedDay: null, lastSeenPayday: null,
-  pieExpanded: false, weeklyExpanded: true, darkMode: true
+  pieExpanded: false, weeklyExpanded: true, darkMode: false
 };
 var noteTargetId = null;
 
@@ -796,8 +796,9 @@ function loadData() {
   try { var lsp = localStorage.getItem("ldg-lsp"); if (lsp) S.lastSeenPayday = lsp; } catch(e) {}
   try {
     var theme = localStorage.getItem("ldg-theme");
-    if (theme === "light") { S.darkMode = false; document.body.classList.add("light-mode"); document.getElementById("theme-toggle").textContent = "🌙"; }
-  } catch(e) {}
+    if (theme === "dark") { S.darkMode = true; document.getElementById("theme-toggle").textContent = "☀"; }
+    else { S.darkMode = false; document.body.classList.add("light-mode"); document.getElementById("theme-toggle").textContent = "🌙"; }
+  } catch(e) { document.body.classList.add("light-mode"); }
   render();
   checkPayday();
 }
@@ -909,18 +910,28 @@ function exJSON(text) {
 
 function openCatModal(catId, catLabel, catColor) {
   var cm = curMonth();
-  var txList = S.txs.filter(function(t) { return mkey(t.date) === cm && t.category === catId && t.type === "debit" && !t.onceOff; });
-  var total = txList.reduce(function(s,t) { return s+t.amount; }, 0);
+  var debitList = S.txs.filter(function(t) { return mkey(t.date) === cm && t.category === catId && t.type === "debit" && !t.onceOff; });
+  var creditList = S.txs.filter(function(t) { return mkey(t.date) === cm && t.category === catId && t.type === "credit"; });
+  var totalDebits = debitList.reduce(function(s,t) { return s+t.amount; }, 0);
+  var totalCredits = creditList.reduce(function(s,t) { return s+t.amount; }, 0);
+  var netTotal = Math.max(0, totalDebits - totalCredits);
   document.getElementById("modal-dot").style.background = catColor;
   document.getElementById("modal-title").textContent = catLabel;
-  document.getElementById("modal-subtitle").textContent = txList.length + " transaction" + (txList.length !== 1 ? "s" : "") + " · " + cm;
-  document.getElementById("modal-total-label").textContent = "Total";
+  document.getElementById("modal-subtitle").textContent = (debitList.length + creditList.length) + " transaction" + ((debitList.length + creditList.length) !== 1 ? "s" : "") + " · " + cm;
+  document.getElementById("modal-total-label").textContent = "Net spend";
   document.getElementById("modal-total-val").style.color = catColor;
-  document.getElementById("modal-total-val").textContent = fmt(total);
-  var sorted = txList.slice().sort(function(a,b) { return new Date(b.date) - new Date(a.date); });
-  document.getElementById("modal-list").innerHTML = sorted.length ? sorted.map(function(tx) {
-    return '<div class="modal-tx"><div class="modal-tx-left"><div class="modal-tx-desc">' + tx.description + '</div><div class="modal-tx-meta">' + tx.date + (tx.account ? " · " + tx.account : "") + (tx.note ? " · " + tx.note : "") + '</div></div><div class="modal-tx-amt" style="color:var(--red)">-' + fmt(tx.amount) + '</div></div>';
-  }).join("") : '<div class="empty">No transactions</div>';
+  document.getElementById("modal-total-val").textContent = fmt(netTotal);
+  var allTxs = debitList.concat(creditList).sort(function(a,b) { return new Date(b.date) - new Date(a.date); });
+  var summaryHtml = "";
+  if (totalCredits > 0) {
+    summaryHtml = '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">' +
+      '<span style="color:var(--muted)">Gross spend</span><span style="color:var(--red)">-' + fmt(totalDebits) + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">' +
+      '<span style="color:var(--muted)">Reimbursements</span><span style="color:var(--green)">+' + fmt(totalCredits) + '</span></div>';
+  }
+  document.getElementById("modal-list").innerHTML = summaryHtml + (allTxs.length ? allTxs.map(function(tx) {
+    return '<div class="modal-tx"><div class="modal-tx-left"><div class="modal-tx-desc">' + tx.description + '</div><div class="modal-tx-meta">' + tx.date + (tx.account ? " · " + tx.account : "") + (tx.note ? " · " + tx.note : "") + '</div></div><div class="modal-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + fmt(tx.amount) + '</div></div>';
+  }).join("") : '<div class="empty">No transactions</div>');
   document.getElementById("modal-overlay").classList.add("open");
   document.body.style.overflow = "hidden";
 }
