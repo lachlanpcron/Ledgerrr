@@ -341,6 +341,13 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <input type="checkbox" id="note-once-off" style="width:16px;height:16px;cursor:pointer">
         Mark as once-off (excluded from chart)
       </label>
+      <div id="note-transfer-row" style="display:none;margin-top:12px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Linked account (transfer to/from)</div>
+        <select class="note-input" id="note-linked-acct" style="cursor:pointer;margin-top:0">
+          <option value="">No linked account</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Links both sides of an internal transfer so the app knows it's the same movement</div>
+      </div>
       <button onclick="saveNote()" style="width:100%;margin-top:14px;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Save</button>
       <button onclick="clearNote()" style="width:100%;margin-top:8px;padding:10px;background:none;color:var(--muted);border:1px solid var(--border);border-radius:10px;font-size:13px;cursor:pointer;font-family:inherit">Clear note</button>
     </div>
@@ -988,6 +995,22 @@ function openNoteModal(txId) {
   document.getElementById("note-modal-sub").textContent = tx.description;
   document.getElementById("note-input").value = tx.note || "";
   document.getElementById("note-once-off").checked = tx.onceOff || false;
+
+  // Linked account — show only for transfers
+  var transferRow = document.getElementById("note-transfer-row");
+  var linkedSel = document.getElementById("note-linked-acct");
+  if (tx.category === "transfers") {
+    transferRow.style.display = "block";
+    var allAccts = S.accounts.concat((S.manualAccts||[]).map(function(a){return a.name;}));
+    linkedSel.innerHTML = '<option value="">No linked account</option>' +
+      allAccts.filter(function(a){ return a !== tx.account; }).map(function(a) {
+        return '<option value="' + a + '"' + (tx.linkedAccount === a ? " selected" : "") + '>' + a + '</option>';
+      }).join("");
+  } else {
+    transferRow.style.display = "none";
+    linkedSel.innerHTML = '<option value="">No linked account</option>';
+  }
+
   document.getElementById("note-overlay").classList.add("open");
   document.body.style.overflow = "hidden";
 }
@@ -997,11 +1020,13 @@ function saveNote() {
   if (!noteTargetId) return;
   var note = document.getElementById("note-input").value.trim();
   var onceOff = document.getElementById("note-once-off").checked;
+  var linkedAccount = document.getElementById("note-linked-acct").value || null;
   S.txs = S.txs.map(function(t) {
     if (t.id !== noteTargetId) return t;
     var updated = JSON.parse(JSON.stringify(t));
     if (note) updated.note = note; else delete updated.note;
     if (onceOff) updated.onceOff = true; else delete updated.onceOff;
+    if (linkedAccount) updated.linkedAccount = linkedAccount; else delete updated.linkedAccount;
     return updated;
   });
   save(); render(); closeNote();
@@ -1011,7 +1036,7 @@ function clearNote() {
   S.txs = S.txs.map(function(t) {
     if (t.id !== noteTargetId) return t;
     var updated = JSON.parse(JSON.stringify(t));
-    delete updated.note; delete updated.onceOff;
+    delete updated.note; delete updated.onceOff; delete updated.linkedAccount;
     return updated;
   });
   save(); render(); closeNote();
@@ -1344,13 +1369,20 @@ function render() {
       var txHtml = dayTxs.map(function(tx) {
         var opts = S.cats.map(function(c) { return '<option value="' + c.id + '"' + (c.id === tx.category ? " selected" : "") + '>' + c.label + '</option>'; }).join("");
         var hasNote = tx.note || tx.onceOff;
+        var isTransfer = tx.category === "transfers";
+        var linkedBadge = isTransfer
+          ? (tx.linkedAccount
+            ? '<div style="margin-top:3px"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(124,106,247,0.12);color:var(--accent)">⇄ ' + tx.linkedAccount + '</span></div>'
+            : '<div style="margin-top:2px"><span style="font-size:10px;color:var(--muted)">⇄ tap Note to link account</span></div>')
+          : "";
         return '<div class="tx-item">' +
           '<div class="tx-top"><span class="tx-desc" title="' + tx.description + '">' + tx.description + (tx.onceOff ? '<span class="once-off-badge">once-off</span>' : "") + '</span>' +
           '<span class="tx-amt ' + tx.type + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>' +
           (tx.note ? '<div class="tx-note-text">📝 ' + tx.note + '</div>' : "") +
+          linkedBadge +
           '<div class="tx-bottom"><span class="tx-meta">' + (tx.account || "") + '</span>' +
           '<div class="tx-actions"><select class="tx-cat-sel" onchange="chCat(\'' + tx.id + '\',this.value)">' + opts + '</select>' +
-          '<button class="tx-note-btn' + (hasNote ? " has-note" : "") + '" onclick="openNoteModal(\'' + tx.id + '\')">' + (hasNote ? "📝" : "Note") + '</button>' +
+          '<button class="tx-note-btn' + ((hasNote || (isTransfer && tx.linkedAccount)) ? " has-note" : "") + '" onclick="openNoteModal(\'' + tx.id + '\')">' + ((hasNote || (isTransfer && tx.linkedAccount)) ? "📝" : "Note") + '</button>' +
           '<button class="tx-del" onclick="delTx(\'' + tx.id + '\')">×</button></div></div></div>';
       }).join("");
       return '<div style="border-bottom:1px solid var(--border)">' +
