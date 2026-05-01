@@ -2110,7 +2110,14 @@ function updateGoalExtra(id, val) {
 
 // ── PAYDAY POPUP ─────────────────────────────────────────────────
 function checkPayday() {
-  var incomeTxs = S.txs.filter(function(t) { return t.category === "income" && t.type === "credit"; });
+  // Only trigger for salary — income transactions above $200 with payroll-like descriptions
+  var salaryKeywords = ["salary", "payroll", "pay", "wage", "old england", "employer", "net pay"];
+  var incomeTxs = S.txs.filter(function(t) {
+    if (t.category !== "income" || t.type !== "credit") return false;
+    if (t.amount < 500) return false; // ignore small credits like tips
+    var desc = (t.description || "").toLowerCase();
+    return salaryKeywords.some(function(kw) { return desc.indexOf(kw) !== -1; });
+  });
   if (!incomeTxs.length) return;
   var latest = incomeTxs.sort(function(a,b) { return new Date(b.date)-new Date(a.date); })[0];
   if (!latest) return;
