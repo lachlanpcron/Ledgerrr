@@ -2779,6 +2779,11 @@ function renderWeeklyTracker() {
       '<button onclick="setSavingsView(\'weekly\')" style="font-size:11px;padding:3px 10px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;background:' + (S.savingsView === 'weekly' ? 'var(--accent)' : 'transparent') + ';color:' + (S.savingsView === 'weekly' ? '#fff' : 'var(--muted)') + '">Week</button>' +
       '<button onclick="setSavingsView(\'monthly\')" style="font-size:11px;padding:3px 10px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;background:' + (S.savingsView === 'monthly' ? 'var(--accent)' : 'transparent') + ';color:' + (S.savingsView === 'monthly' ? '#fff' : 'var(--muted)') + '">Month</button>' +
       '</div></div>';
+    var totalSaved = savingsRows.reduce(function(s,r) { return s + (S.savingsView === 'monthly' ? r.savedMonthly : r.saved); }, 0);
+    var totalTarget = savingsRows.reduce(function(s,r) { return s + (S.savingsView === 'monthly' ? r.target * 4.33 : r.target); }, 0);
+    var totalPct = totalTarget > 0 ? Math.min(100, (totalSaved / totalTarget) * 100) : 0;
+    var totalBarColor = totalPct >= 100 ? "var(--green)" : totalPct >= 60 ? "#e8c44a" : "var(--accent)";
+    var totalLabel = S.savingsView === 'monthly' ? '/mo' : '/wk';
     html += savingsRows.map(function(row) {
       var target = S.savingsView === 'monthly' ? row.target * 4.33 : row.target;
       var saved = S.savingsView === 'monthly' ? row.savedMonthly : row.saved;
@@ -2793,6 +2798,17 @@ function renderWeeklyTracker() {
         '<div class="wt-bar-bg"><div class="wt-bar-fill" style="width:' + pct.toFixed(1) + '%;background:' + barColor + '"></div></div>' +
         '</div>';
     }).join("");
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+      '<span style="font-size:12px;font-weight:600;color:var(--text)">Total pool</span>' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:13px;font-weight:700;color:var(--accent)">$' + totalSaved.toFixed(0) + '</span>' +
+      '<span style="font-size:11px;color:var(--muted)">of $' + totalTarget.toFixed(0) + totalLabel + '</span>' +
+      '<span style="font-size:12px;font-weight:700;color:' + totalBarColor + '">' + Math.round(totalPct) + '%</span>' +
+      '</div></div>' +
+      '<div style="background:var(--surface2);border-radius:5px;height:10px;overflow:hidden">' +
+      '<div style="height:100%;border-radius:5px;background:linear-gradient(90deg,var(--accent),' + totalBarColor + ');width:' + totalPct.toFixed(1) + '%;transition:width 0.5s ease"></div>' +
+      '</div></div>';
   }
 
   bodyEl.innerHTML = html;
@@ -3073,7 +3089,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v6";',
+    'var CACHE = "ledger-v7";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
