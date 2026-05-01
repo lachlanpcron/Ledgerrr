@@ -785,7 +785,7 @@ var S = {
   calSelectedDay: null, lastSeenPayday: null,
   pieExpanded: false, weeklyExpanded: true, darkMode: false,
   acctExpanded: {}, budgetEditing: false, txDayExpanded: {},
-  savingsPriority: []
+  savingsPriority: [], savingsView: "weekly"
 };
 var noteTargetId = null;
 
@@ -2755,14 +2755,22 @@ function renderWeeklyTracker() {
   }
 
   if (savingsRows.length) {
-    html += '<div class="wt-section-label">Saving for</div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">' +
+      '<span class="wt-section-label" style="margin:0;padding:0;border:none">Saving for</span>' +
+      '<div style="display:flex;background:var(--surface2);border-radius:16px;padding:2px;gap:2px">' +
+      '<button onclick="setSavingsView(\'weekly\')" style="font-size:11px;padding:3px 10px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;background:' + (S.savingsView === 'weekly' ? 'var(--accent)' : 'transparent') + ';color:' + (S.savingsView === 'weekly' ? '#fff' : 'var(--muted)') + '">Week</button>' +
+      '<button onclick="setSavingsView(\'monthly\')" style="font-size:11px;padding:3px 10px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;background:' + (S.savingsView === 'monthly' ? 'var(--accent)' : 'transparent') + ';color:' + (S.savingsView === 'monthly' ? '#fff' : 'var(--muted)') + '">Month</button>' +
+      '</div></div>';
     html += savingsRows.map(function(row) {
-      var pct = row.target > 0 ? Math.min(100, (row.saved / row.target) * 100) : 0;
+      var target = S.savingsView === 'monthly' ? row.target * 4.33 : row.target;
+      var saved = S.savingsView === 'monthly' ? row.accountBalance : row.saved;
+      var pct = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
       var barColor = pct >= 100 ? "var(--green)" : pct >= 60 ? "#e8c44a" : "var(--accent)";
+      var label = S.savingsView === 'monthly' ? '/mo' : '/wk';
       return '<div class="wt-row">' +
         '<div class="wt-header">' +
         '<div><span class="wt-label">' + row.label + '</span><span style="font-size:11px;color:var(--muted);margin-left:6px">← ' + row.account + '</span></div>' +
-        '<div class="wt-amounts"><span class="wt-spent" style="color:var(--accent)">$' + row.saved.toFixed(0) + '</span><span class="wt-budget">of $' + row.target.toFixed(0) + '/wk</span><span class="wt-pct" style="color:' + barColor + '">' + Math.round(pct) + '%</span></div>' +
+        '<div class="wt-amounts"><span class="wt-spent" style="color:var(--accent)">$' + saved.toFixed(0) + '</span><span class="wt-budget">of $' + target.toFixed(0) + label + '</span><span class="wt-pct" style="color:' + barColor + '">' + Math.round(pct) + '%</span></div>' +
         '</div>' +
         '<div class="wt-bar-bg"><div class="wt-bar-fill" style="width:' + pct.toFixed(1) + '%;background:' + barColor + '"></div></div>' +
         '</div>';
@@ -2968,6 +2976,11 @@ function toggleTxDay(date) {
     var chevron = parent.querySelector("span:last-child");
     if (chevron) chevron.style.transform = S.txDayExpanded[date] === false ? "" : "rotate(180deg)";
   }
+}
+
+function setSavingsView(view) {
+  S.savingsView = view;
+  renderWeeklyTracker();
 }
 
 function toggleAcct(name) {
