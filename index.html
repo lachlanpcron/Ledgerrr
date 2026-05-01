@@ -2719,18 +2719,29 @@ function renderWeeklyTracker() {
     }
   });
 
-  // Allocate balance in priority order per account
-  var acctRemaining = {};
-  Object.keys(acctBals).forEach(function(a) { acctRemaining[a] = acctBals[a]; });
+  // Weekly allocation — priority order per account
+  var acctRemainingWk = {};
+  Object.keys(acctBals).forEach(function(a) { acctRemainingWk[a] = acctBals[a]; });
+
+  // Monthly allocation — same priority but monthly targets
+  var acctRemainingMo = {};
+  Object.keys(acctBals).forEach(function(a) { acctRemainingMo[a] = acctBals[a]; });
 
   linkedItems.forEach(function(item) {
-    var remaining = acctRemaining[item.account] || 0;
-    var claimed = Math.min(remaining, item.weeklyTarget);
-    acctRemaining[item.account] = Math.max(0, remaining - claimed);
+    var remainingWk = acctRemainingWk[item.account] || 0;
+    var claimedWk = Math.min(remainingWk, item.weeklyTarget);
+    acctRemainingWk[item.account] = Math.max(0, remainingWk - claimedWk);
+
+    var monthlyTarget = item.weeklyTarget * 4.33;
+    var remainingMo = acctRemainingMo[item.account] || 0;
+    var claimedMo = Math.min(remainingMo, monthlyTarget);
+    acctRemainingMo[item.account] = Math.max(0, remainingMo - claimedMo);
+
     savingsRows.push({
       label: item.label,
       account: item.account,
-      saved: claimed,
+      saved: claimedWk,
+      savedMonthly: claimedMo,
       target: item.weeklyTarget,
       accountBalance: acctBals[item.account]
     });
@@ -2770,7 +2781,7 @@ function renderWeeklyTracker() {
       '</div></div>';
     html += savingsRows.map(function(row) {
       var target = S.savingsView === 'monthly' ? row.target * 4.33 : row.target;
-      var saved = S.savingsView === 'monthly' ? row.accountBalance : row.saved;
+      var saved = S.savingsView === 'monthly' ? row.savedMonthly : row.saved;
       var pct = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
       var barColor = pct >= 100 ? "var(--green)" : pct >= 60 ? "#e8c44a" : "var(--accent)";
       var label = S.savingsView === 'monthly' ? '/mo' : '/wk';
@@ -2791,7 +2802,11 @@ function renderWeeklyTracker() {
 
   // Update header summary
   var totalSpentWeek = spendRows.reduce(function(s,r) { return s+r.spent; }, 0);
-  var avgSavePct = savingsRows.length ? Math.round(savingsRows.reduce(function(s,r) { return s + (r.target > 0 ? Math.min(100,(r.balance/r.target)*100) : 0); }, 0) / savingsRows.length) : null;
+  var avgSavePct = savingsRows.length ? Math.round(savingsRows.reduce(function(s,r) {
+    var target = S.savingsView === 'monthly' ? r.target * 4.33 : r.target;
+    var saved = S.savingsView === 'monthly' ? r.savedMonthly : r.saved;
+    return s + (target > 0 ? Math.min(100,(saved/target)*100) : 0);
+  }, 0) / savingsRows.length) : null;
   var summaryParts = [];
   if (totalSpentWeek > 0) summaryParts.push("Spent $" + totalSpentWeek.toFixed(0));
   if (avgSavePct !== null) summaryParts.push("Saved " + avgSavePct + "%");
