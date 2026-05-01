@@ -2807,7 +2807,7 @@ function renderWeeklyTracker() {
       '<span style="font-size:12px;font-weight:700;color:' + totalBarColor + '">' + Math.round(totalPct) + '%</span>' +
       '</div></div>' +
       '<div style="background:var(--surface2);border-radius:5px;height:10px;overflow:hidden">' +
-      '<div style="height:100%;border-radius:5px;background:linear-gradient(90deg,var(--accent),' + totalBarColor + ');width:' + totalPct.toFixed(1) + '%;transition:width 0.5s ease"></div>' +
+      '<div style="height:100%;border-radius:5px;background:linear-gradient(90deg,#e05555,' + (totalPct >= 100 ? '#3dba6e' : totalPct >= 60 ? '#e8c44a' : '#e8854a') + ');width:' + totalPct.toFixed(1) + '%;transition:width 0.5s ease"></div>' +
       '</div></div>';
   }
 
