@@ -1261,7 +1261,24 @@ function render() {
           '<div class="acct-stat"><div class="acct-stat-label">In</div><div class="acct-stat-val" style="color:var(--green)">$' + aIn.toFixed(2) + '</div></div>' +
           '</div>' +
           '<div id="acct-detail-' + safeId + '" style="display:' + (isOpen ? "block" : "none") + '">' +
-          (recent.length ? '<div class="acct-recent-label">Recent</div>' + recent.map(function(tx) { return '<div class="acct-tx"><span class="acct-tx-desc">' + tx.description + '</span><span class="acct-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>'; }).join("") : "") +
+          (function() {
+            var allAcctTxs = S.txs.filter(function(t) { return t.account === a; }).sort(function(x,y) { return new Date(y.date)-new Date(x.date); });
+            if (!allAcctTxs.length) return '';
+            // Group by date
+            var byDay = {}; var dayOrder = [];
+            allAcctTxs.forEach(function(tx) { if (!byDay[tx.date]) { byDay[tx.date] = []; dayOrder.push(tx.date); } byDay[tx.date].push(tx); });
+            var html = '<div class="acct-recent-label">Transactions</div><div style="max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;">';
+            dayOrder.forEach(function(date) {
+              var d = new Date(date);
+              var dayLabel = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + d.getDate() + ' ' + MO[d.getMonth()];
+              html += '<div style="font-size:11px;font-weight:600;color:var(--muted);padding:8px 0 4px;border-top:1px solid var(--border);text-transform:uppercase;letter-spacing:0.05em">' + dayLabel + '</div>';
+              byDay[date].forEach(function(tx) {
+                html += '<div class="acct-tx"><span class="acct-tx-desc">' + tx.description + '</span><span class="acct-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>';
+              });
+            });
+            html += '</div>';
+            return html;
+          })() +
           '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div>' +
           '</div>' +
           '</div>';
@@ -1287,9 +1304,23 @@ function render() {
         '<span style="font-size:14px;color:var(--muted);transition:transform 0.2s;display:inline-block;transform:' + (isOpenMa ? "rotate(180deg)" : "") + '">▾</span>' +
         '</div></div>' +
         '<div id="acct-detail-' + safeNameMa + '" style="display:' + (isOpenMa ? "block" : "none") + '">' +
-        (recentMa.length ? '<div class="acct-recent-label" style="margin-top:12px">Recent</div>' + recentMa.map(function(tx) {
-          return '<div class="acct-tx"><span class="acct-tx-desc">' + tx.description + '</span><span class="acct-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>';
-        }).join("") : "") +
+        (function() {
+          if (!maTxs.length) return '';
+          var sorted = maTxs.slice().sort(function(x,y) { return new Date(y.date)-new Date(x.date); });
+          var byDay = {}; var dayOrder = [];
+          sorted.forEach(function(tx) { if (!byDay[tx.date]) { byDay[tx.date] = []; dayOrder.push(tx.date); } byDay[tx.date].push(tx); });
+          var html = '<div class="acct-recent-label" style="margin-top:12px">Transactions</div><div style="max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;">';
+          dayOrder.forEach(function(date) {
+            var d = new Date(date);
+            var dayLabel = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + d.getDate() + ' ' + MO[d.getMonth()];
+            html += '<div style="font-size:11px;font-weight:600;color:var(--muted);padding:8px 0 4px;border-top:1px solid var(--border);text-transform:uppercase;letter-spacing:0.05em">' + dayLabel + '</div>';
+            byDay[date].forEach(function(tx) {
+              html += '<div class="acct-tx"><span class="acct-tx-desc">' + tx.description + '</span><span class="acct-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + '$' + tx.amount.toFixed(2) + '</span></div>';
+            });
+          });
+          html += '</div>';
+          return html;
+        })() +
         '<div style="display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border);margin-top:8px">' +
         '<button data-name="' + ma.name + '" onclick="openManualTxModal(this.getAttribute(\'data-name\'))" style="flex:1;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
         '<button onclick="openManualAcctModal(\'' + ma.name.replace(/'/g,"\\'") + '\')" style="padding:10px 12px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit">Edit</button>' +
