@@ -1280,6 +1280,9 @@ function render() {
             return html;
           })() +
           '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div>' +
+          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px">' +
+          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
+          '</div>' +
           '</div>' +
           '</div>';
       })();
