@@ -513,6 +513,12 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
     <div id="tab-txs" style="display:none">
       <div id="mb-txs" class="month-bar"></div>
       <div id="acct-filter" class="acct-filter"></div>
+      <div style="margin-bottom:14px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--muted);flex-shrink:0">Category:</span>
+        <select id="cat-filter-sel" onchange="setCatFilter(this.value)" style="flex:1;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer">
+          <option value="all">All categories</option>
+        </select>
+      </div>
       <div class="card" style="padding:0 18px"><div id="tx-list"><div class="empty">No transactions yet</div></div></div>
     </div>
 
@@ -808,14 +814,15 @@ var START_DATE = "2026-04-29";
 
 var S = {
   txs: [], accounts: [], cats: JSON.parse(JSON.stringify(PRESETS)),
-  month: null, week: null, acctFilter: "all", view: "month",
+  month: null, week: null, acctFilter: "all", catFilter: "all", view: "month",
   startBalances: JSON.parse(JSON.stringify(DEFAULT_START_BAL)),
   creditLimits: {},
   calYear: new Date().getFullYear(), calMonth: new Date().getMonth(),
   calSelectedDay: null, lastSeenPayday: null,
   pieExpanded: false, weeklyExpanded: true, darkMode: false,
   acctExpanded: {}, budgetEditing: false, txDayExpanded: {},
-  savingsPriority: [], savingsView: "weekly"
+  savingsPriority: [], savingsView: "weekly",
+  dismissedAlerts: {}
 };
 var noteTargetId = null;
 
@@ -1491,7 +1498,21 @@ function render() {
 
   // Tx list
   var filt = periodTxs(S.acctFilter);
-  var sortedTx = filt.slice().sort(function(a,b) { return new Date(b.date)-new Date(a.date); });
+
+  // Category filter dropdown
+  var catFilterEl = document.getElementById("cat-filter-sel");
+  if (catFilterEl) {
+    var usedCats = {};
+    filt.forEach(function(t) { if (t.category) usedCats[t.category] = true; });
+    catFilterEl.innerHTML = '<option value="all">All categories</option>' +
+      S.cats.filter(function(c) { return usedCats[c.id]; }).map(function(c) {
+        return '<option value="' + c.id + '"' + (S.catFilter === c.id ? " selected" : "") + '>' + c.label + '</option>';
+      }).join("");
+  }
+
+  // Apply category filter
+  var filteredTx = S.catFilter === "all" ? filt : filt.filter(function(t) { return t.category === S.catFilter; });
+  var sortedTx = filteredTx.slice().sort(function(a,b) { return new Date(b.date)-new Date(a.date); });
   // Tx list — grouped by day, collapsible
   var txList = document.getElementById("tx-list");
   if (!sortedTx.length) { txList.innerHTML = '<div class="empty">No transactions for this period</div>'; }
@@ -1568,6 +1589,7 @@ function sw(name, btn) {
 function selMonth(m) { S.month = m; S.view = "month"; render(); }
 function selWeek(w) { S.week = w; S.view = "week"; render(); }
 function setView(v) { S.view = v; render(); }
+function setCatFilter(cat) { S.catFilter = cat; render(); }
 function setAF(a) { S.acctFilter = a; render(); }
 function chCat(id, cat) {
   S.txs = S.txs.map(function(t) { return t.id === id ? Object.assign({}, t, {category: cat}) : t; });
@@ -2263,15 +2285,16 @@ function closePaydayOutside(e) { if (e.target === document.getElementById("payda
 function renderSpendingAlerts() {
   var cm = curMonth();
   var allTxs = S.txs.filter(function(t) { return mkey(t.date) === cm; });
-  var spendTxs = allTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers"; });
+  var spendTxs = allTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers" && t.category !== "opening-balance"; });
   var alerts = [];
   S.cats.forEach(function(cat) {
-    if (cat.id === "transfers" || cat.id === "income") return;
-    // Find budget for this category by matching name
+    if (cat.id === "transfers" || cat.id === "income" || cat.id === "opening-balance") return;
     var budgetAmt = 0;
     S.budget.forEach(function(sec) {
       sec.items.forEach(function(item) {
-        if (item.name.toLowerCase().indexOf(cat.label.toLowerCase()) !== -1 || cat.label.toLowerCase().indexOf(item.name.toLowerCase()) !== -1) {
+        if (item.linkedCategory === cat.id) {
+          budgetAmt += itemMonthly(item);
+        } else if (!item.linkedCategory && (item.name.toLowerCase().indexOf(cat.label.toLowerCase()) !== -1 || cat.label.toLowerCase().indexOf(item.name.toLowerCase()) !== -1)) {
           budgetAmt += itemMonthly(item);
         }
       });
@@ -2279,16 +2302,27 @@ function renderSpendingAlerts() {
     if (budgetAmt <= 0) return;
     var actual = spendTxs.filter(function(t) { return t.category === cat.id; }).reduce(function(s,t) { return s+t.amount; }, 0);
     var pct = actual / budgetAmt;
+    var key = cat.id + "-" + cm;
+    if (S.dismissedAlerts && S.dismissedAlerts[key]) return;
     if (pct >= 1) {
-      alerts.push({ type: "over", icon: "🚨", text: "<strong>" + cat.label + "</strong> is over budget — $" + actual.toFixed(0) + " of $" + budgetAmt.toFixed(0) + " (" + Math.round(pct*100) + "%)" });
+      alerts.push({ key: key, type: "over", icon: "🚨", text: "<strong>" + cat.label + "</strong> is over budget — $" + actual.toFixed(0) + " of $" + budgetAmt.toFixed(0) + " (" + Math.round(pct*100) + "%)" });
     } else if (pct >= 0.8) {
-      alerts.push({ type: "warn", icon: "⚠️", text: "<strong>" + cat.label + "</strong> is at " + Math.round(pct*100) + "% of budget — $" + actual.toFixed(0) + " of $" + budgetAmt.toFixed(0) });
+      alerts.push({ key: key, type: "warn", icon: "⚠️", text: "<strong>" + cat.label + "</strong> is at " + Math.round(pct*100) + "% of budget — $" + actual.toFixed(0) + " of $" + budgetAmt.toFixed(0) });
     }
   });
   var el = document.getElementById("spending-alerts");
   el.innerHTML = alerts.map(function(a) {
-    return '<div class="alert-row ' + a.type + '"><span class="alert-icon">' + a.icon + '</span><span class="alert-text">' + a.text + '</span></div>';
+    return '<div class="alert-row ' + a.type + '" style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex:1"><span class="alert-icon">' + a.icon + '</span><span class="alert-text">' + a.text + '</span></div>' +
+      '<button data-key="' + a.key + '" onclick="dismissAlert(this.getAttribute(\'data-key\'))" style="background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;padding:0;line-height:1;flex-shrink:0">×</button>' +
+      '</div>';
   }).join("");
+}
+
+function dismissAlert(key) {
+  if (!S.dismissedAlerts) S.dismissedAlerts = {};
+  S.dismissedAlerts[key] = true;
+  renderSpendingAlerts();
 }
 
 // ── RECURRING DETECTION ───────────────────────────────────────────
