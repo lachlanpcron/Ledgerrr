@@ -1778,6 +1778,17 @@ function renderBudget() {
         '<span style="font-size:11px;color:var(--muted);flex-shrink:0">→ Track in:</span>' +
         '<select style="font-size:11px;flex:1;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:' + (linkedAcct ? 'var(--accent)' : 'var(--muted)') + ';font-family:inherit;cursor:pointer" onchange="updateBudgetItem(' + si + ',' + ii + ',\'linkedAccount\',this.value)">' + acctOpts + '</select>' +
         '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:2px">' +
+        '<span style="font-size:11px;color:var(--muted);flex-shrink:0">→ Category:</span>' +
+        (function() {
+          var linkedCat = item.linkedCategory || "";
+          var catOpts = '<option value="">No category</option>' +
+            S.cats.filter(function(c){ return c.id !== "transfers" && c.id !== "income" && c.id !== "opening-balance"; }).map(function(c) {
+              return '<option value="' + c.id + '"' + (c.id === linkedCat ? " selected" : "") + '>' + c.label + '</option>';
+            }).join("");
+          return '<select style="font-size:11px;flex:1;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:' + (linkedCat ? 'var(--accent)' : 'var(--muted)') + ';font-family:inherit;cursor:pointer" onchange="updateBudgetItem(' + si + ',' + ii + ',\'linkedCategory\',this.value)">' + catOpts + '</select>';
+        })() +
+        '</div>' +
         '</div>';
     }).join("");
 
@@ -2792,14 +2803,18 @@ function renderWeeklyTracker() {
     var reimbursed = weekCreditTxs.filter(function(t) { return t.category === cat.id; }).reduce(function(s,t) { return s+t.amount; }, 0);
     var net = Math.max(0, spent - reimbursed);
     if (net <= 0) return;
-    // Find weekly budget for this category
+    // Find weekly budget for this category using linkedCategory first, then fuzzy match
     var weeklyBudget = 0;
     S.budget.forEach(function(sec) {
       sec.items.forEach(function(item) {
-        var itemLabel = item.name.toLowerCase();
-        var catLabel = cat.label.toLowerCase();
-        if (itemLabel.indexOf(catLabel) !== -1 || catLabel.indexOf(itemLabel) !== -1) {
+        if (item.linkedCategory === cat.id) {
           weeklyBudget += itemMonthly(item) / 4.33;
+        } else if (!item.linkedCategory) {
+          var itemLabel = item.name.toLowerCase();
+          var catLabel = cat.label.toLowerCase();
+          if (itemLabel.indexOf(catLabel) !== -1 || catLabel.indexOf(itemLabel) !== -1) {
+            weeklyBudget += itemMonthly(item) / 4.33;
+          }
         }
       });
     });
@@ -3173,18 +3188,23 @@ function renderBudgetActuals() {
     });
   });
 
-  // Match against budget categories
+  // Match against budget categories using linkedCategory first, then name fuzzy match
   var rows = [];
   S.cats.forEach(function(cat) {
     if (cat.id === "transfers" || cat.id === "income" || cat.id === "opening-balance") return;
     var avg = catTotals[cat.id] ? catTotals[cat.id] / catWeeks[cat.id] : 0;
     if (avg <= 0) return;
-    // Find weekly budget for this category
+    // Sum budget items linked to this category
     var budget = 0;
     S.budget.forEach(function(sec) {
       sec.items.forEach(function(item) {
-        var il = item.name.toLowerCase(); var cl = cat.label.toLowerCase();
-        if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / 4.33;
+        if (item.linkedCategory === cat.id) {
+          budget += itemMonthly(item) / 4.33;
+        } else if (!item.linkedCategory) {
+          // Fallback to name fuzzy match only if no linkedCategory set
+          var il = item.name.toLowerCase(); var cl = cat.label.toLowerCase();
+          if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / 4.33;
+        }
       });
     });
     rows.push({ cat: cat, avg: avg, budget: budget, weeks: catWeeks[cat.id] || 0 });
