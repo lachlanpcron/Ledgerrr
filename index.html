@@ -411,7 +411,8 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
               <div id="weekly-tracker-summary" style="font-size:11px;color:var(--accent);font-weight:500"></div>
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <button onclick="event.stopPropagation();openWeekHistory()" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-family:inherit">History</button>
             <button onclick="event.stopPropagation();openWeeklySettingsModal()" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-family:inherit">⚙ Targets</button>
             <span id="weekly-tracker-chevron" style="font-size:16px;color:var(--muted);transition:transform 0.2s">▾</span>
           </div>
@@ -480,6 +481,12 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <div class="card-label">Monthly summary</div>
         <div id="budget-summary"></div>
       </div>
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-label" style="margin-bottom:0">Spending averages <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(rolling up to 6 weeks)</span></div>
+        </div>
+        <div id="budget-actuals"><div class="empty" style="padding:10px 0">Import more transactions to see averages</div></div>
+      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <span style="font-size:13px;color:var(--muted)">Budget items</span>
         <button id="budget-edit-btn" onclick="toggleBudgetEdit()" style="padding:6px 16px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Edit</button>
@@ -539,6 +546,28 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <div class="card-label">Data</div>
         <button class="danger-btn" onclick="resetData()">Reset all data</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- WEEKLY HISTORY MODAL -->
+<div class="modal-overlay" id="week-history-overlay" onclick="closeWeekHistoryOutside(event)">
+  <div class="modal" style="max-height:88vh">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div>
+        <span class="modal-title">Weekly history</span>
+        <div class="modal-subtitle" id="wh-subtitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeWeekHistory()">×</button>
+    </div>
+    <div class="modal-body" style="padding-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <button id="wh-prev" onclick="weekHistoryNav(-1)" style="padding:7px 16px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--text);font-size:16px;cursor:pointer;font-family:inherit">‹</button>
+        <span id="wh-title" style="font-size:14px;font-weight:600;text-align:center"></span>
+        <button id="wh-next" onclick="weekHistoryNav(1)" style="padding:7px 16px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--text);font-size:16px;cursor:pointer;font-family:inherit">›</button>
+      </div>
+      <div id="week-history-body"></div>
     </div>
   </div>
 </div>
@@ -1766,6 +1795,7 @@ function renderBudget() {
   });
   document.getElementById("budget-sections").innerHTML = html;
   renderBudgetViewMode();
+  renderBudgetActuals();
   // Apply current edit state
   var viewEl = document.getElementById("budget-view-mode");
   var editEl = document.getElementById("budget-edit-mode");
@@ -3083,6 +3113,178 @@ function toggleTxDay(date) {
     var chevron = parent.querySelector("span:last-child");
     if (chevron) chevron.style.transform = S.txDayExpanded[date] === false ? "" : "rotate(180deg)";
   }
+}
+
+// ── WEEK HISTORY & BUDGET ACTUALS ────────────────────────────────
+
+function getWeekBounds(offsetWeeks) {
+  var today = new Date(); today.setHours(0,0,0,0);
+  var day = today.getDay();
+  var daysFromTue = (day + 5) % 7;
+  var thisTue = new Date(today); thisTue.setDate(today.getDate() - daysFromTue);
+  var start = new Date(thisTue); start.setDate(thisTue.getDate() + offsetWeeks * 7);
+  var end = new Date(start); end.setDate(start.getDate() + 6);
+  return { start: start, end: end,
+    startStr: dateStr(start), endStr: dateStr(end),
+    label: MO[start.getMonth()] + " " + start.getDate() + " — " + MO[end.getMonth()] + " " + end.getDate()
+  };
+}
+
+function getWeekSpend(startStr, endStr) {
+  var txs = S.txs.filter(function(t) {
+    return t.date >= startStr && t.date <= endStr &&
+      t.type === "debit" &&
+      t.category !== "transfers" && t.category !== "opening-balance" &&
+      t.description.toLowerCase().indexOf("opening balance") === -1;
+  });
+  var byCat = {};
+  txs.forEach(function(t) { byCat[t.category] = (byCat[t.category] || 0) + t.amount; });
+  // Net off credits
+  var credits = S.txs.filter(function(t) {
+    return t.date >= startStr && t.date <= endStr && t.type === "credit" &&
+      t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance";
+  });
+  credits.forEach(function(t) { byCat[t.category] = Math.max(0, (byCat[t.category] || 0) - t.amount); });
+  return byCat;
+}
+
+function renderBudgetActuals() {
+  var el = document.getElementById("budget-actuals");
+  if (!el) return;
+  // Get up to 6 completed weeks (not current week)
+  var weeks = [];
+  for (var i = -1; i >= -6; i--) {
+    var b = getWeekBounds(i);
+    var hasTxs = S.txs.some(function(t) { return t.date >= b.startStr && t.date <= b.endStr; });
+    if (hasTxs) weeks.push(b);
+  }
+  if (!weeks.length) { el.innerHTML = '<div class="empty" style="padding:10px 0">Import more transactions to see averages</div>'; return; }
+
+  // Calculate average spend per category across weeks
+  var catTotals = {};
+  var catWeeks = {};
+  weeks.forEach(function(w) {
+    var spend = getWeekSpend(w.startStr, w.endStr);
+    Object.keys(spend).forEach(function(cat) {
+      if (spend[cat] > 0) {
+        catTotals[cat] = (catTotals[cat] || 0) + spend[cat];
+        catWeeks[cat] = (catWeeks[cat] || 0) + 1;
+      }
+    });
+  });
+
+  // Match against budget categories
+  var rows = [];
+  S.cats.forEach(function(cat) {
+    if (cat.id === "transfers" || cat.id === "income" || cat.id === "opening-balance") return;
+    var avg = catTotals[cat.id] ? catTotals[cat.id] / catWeeks[cat.id] : 0;
+    if (avg <= 0) return;
+    // Find weekly budget for this category
+    var budget = 0;
+    S.budget.forEach(function(sec) {
+      sec.items.forEach(function(item) {
+        var il = item.name.toLowerCase(); var cl = cat.label.toLowerCase();
+        if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / 4.33;
+      });
+    });
+    rows.push({ cat: cat, avg: avg, budget: budget, weeks: catWeeks[cat.id] || 0 });
+  });
+  rows.sort(function(a,b) { return b.avg - a.avg; });
+
+  if (!rows.length) { el.innerHTML = '<div class="empty" style="padding:10px 0">No spending data yet</div>'; return; }
+
+  el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Based on ' + weeks.length + ' week' + (weeks.length !== 1 ? "s" : "") + ' of data</div>' +
+    rows.map(function(r) {
+      var diff = r.budget > 0 ? r.avg - r.budget : null;
+      var pct = r.budget > 0 ? Math.min(200, (r.avg / r.budget) * 100) : null;
+      var barColor = pct === null ? "var(--accent)" : pct <= 80 ? "var(--green)" : pct <= 100 ? "#e8c44a" : "var(--red)";
+      var diffStr = diff !== null ? (diff > 0
+        ? '<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(224,85,85,0.12);color:var(--red)">+$' + diff.toFixed(0) + '/wk over</span>'
+        : '<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(61,186,110,0.12);color:var(--green)">$' + Math.abs(diff).toFixed(0) + '/wk under</span>')
+        : '<span style="font-size:10px;color:var(--muted)">no budget set</span>';
+      return '<div style="margin-bottom:12px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">' +
+        '<div style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:' + r.cat.color + ';display:inline-block"></span><span style="font-size:13px">' + r.cat.label + '</span></div>' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:12px;font-weight:600">$' + r.avg.toFixed(0) + '/wk</span>' +
+        (r.budget > 0 ? '<span style="font-size:11px;color:var(--muted)">of $' + r.budget.toFixed(0) + '</span>' : '') +
+        diffStr + '</div></div>' +
+        (r.budget > 0 ? '<div style="background:var(--surface2);border-radius:3px;height:6px;overflow:hidden"><div style="height:100%;border-radius:3px;background:' + barColor + ';width:' + Math.min(100, pct).toFixed(1) + '%"></div></div>' : '') +
+        '</div>';
+    }).join("");
+}
+
+// Week history modal
+var weekHistoryOffset = -1; // start at last completed week
+
+function openWeekHistory() {
+  weekHistoryOffset = -1;
+  renderWeekHistoryModal();
+  document.getElementById("week-history-overlay").classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+function closeWeekHistory() {
+  document.getElementById("week-history-overlay").classList.remove("open");
+  document.body.style.overflow = "";
+}
+function closeWeekHistoryOutside(e) { if (e.target === document.getElementById("week-history-overlay")) closeWeekHistory(); }
+
+function weekHistoryNav(dir) {
+  weekHistoryOffset += dir;
+  if (weekHistoryOffset >= 0) weekHistoryOffset = -1; // don't go to current or future
+  renderWeekHistoryModal();
+}
+
+function renderWeekHistoryModal() {
+  var bounds = getWeekBounds(weekHistoryOffset);
+  document.getElementById("wh-title").textContent = "Tue " + bounds.start.getDate() + " " + MO[bounds.start.getMonth()] + " — Mon " + bounds.end.getDate() + " " + MO[bounds.end.getMonth()];
+  document.getElementById("wh-subtitle").textContent = weekHistoryOffset === -1 ? "Last week" : Math.abs(weekHistoryOffset) + " weeks ago";
+  document.getElementById("wh-next").style.opacity = weekHistoryOffset >= -1 ? "0.3" : "1";
+  document.getElementById("wh-next").style.pointerEvents = weekHistoryOffset >= -1 ? "none" : "auto";
+
+  var spend = getWeekSpend(bounds.startStr, bounds.endStr);
+  var totalSpend = Object.values ? Object.values(spend).reduce(function(s,v){return s+v;},0) :
+    Object.keys(spend).reduce(function(s,k){return s+spend[k];},0);
+
+  if (totalSpend <= 0) {
+    document.getElementById("week-history-body").innerHTML = '<div class="empty">No transactions found for this week</div>';
+    return;
+  }
+
+  // Spending rows
+  var catRows = [];
+  S.cats.forEach(function(cat) {
+    if (!spend[cat.id] || spend[cat.id] <= 0) return;
+    var budget = 0;
+    S.budget.forEach(function(sec) {
+      sec.items.forEach(function(item) {
+        var il = item.name.toLowerCase(); var cl = cat.label.toLowerCase();
+        if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / 4.33;
+      });
+    });
+    catRows.push({ cat: cat, spent: spend[cat.id], budget: budget });
+  });
+  catRows.sort(function(a,b) { return b.spent - a.spent; });
+
+  var html = '<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:2px solid var(--border);margin-bottom:12px">' +
+    '<span style="font-size:13px;font-weight:600">Total spent</span>' +
+    '<span style="font-size:16px;font-weight:700;color:var(--red)">$' + totalSpend.toFixed(2) + '</span></div>';
+
+  html += catRows.map(function(r) {
+    var pct = r.budget > 0 ? Math.min(200, (r.spent / r.budget) * 100) : null;
+    var barColor = pct === null ? "var(--accent)" : pct <= 80 ? "var(--green)" : pct <= 100 ? "#e8c44a" : "var(--red)";
+    return '<div style="margin-bottom:12px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">' +
+      '<div style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:' + r.cat.color + ';display:inline-block"></span><span style="font-size:13px">' + r.cat.label + '</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:13px;font-weight:600;color:var(--red)">$' + r.spent.toFixed(2) + '</span>' +
+      (r.budget > 0 ? '<span style="font-size:11px;color:var(--muted)">of $' + r.budget.toFixed(0) + '</span><span style="font-size:11px;font-weight:600;color:' + barColor + '">' + Math.round(pct) + '%</span>' : '') +
+      '</div></div>' +
+      (r.budget > 0 ? '<div style="background:var(--surface2);border-radius:3px;height:6px;overflow:hidden"><div style="height:100%;border-radius:3px;background:' + barColor + ';width:' + Math.min(100,pct).toFixed(1) + '%"></div></div>' : '') +
+      '</div>';
+  }).join("");
+
+  document.getElementById("week-history-body").innerHTML = html;
 }
 
 function setSavingsView(view) {
