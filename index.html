@@ -781,6 +781,7 @@ var S = {
   txs: [], accounts: [], cats: JSON.parse(JSON.stringify(PRESETS)),
   month: null, week: null, acctFilter: "all", view: "month",
   startBalances: JSON.parse(JSON.stringify(DEFAULT_START_BAL)),
+  creditLimits: {},
   calYear: new Date().getFullYear(), calMonth: new Date().getMonth(),
   calSelectedDay: null, lastSeenPayday: null,
   pieExpanded: false, weeklyExpanded: true, darkMode: false,
@@ -802,6 +803,8 @@ function loadData() {
       var saved = JSON.parse(sb);
       Object.keys(saved).forEach(function(k) { S.startBalances[k] = saved[k]; });
     }
+    var cl = localStorage.getItem("ldg-cl");
+    if (cl) S.creditLimits = JSON.parse(cl);
   } catch(e) {}
   S.budget = loadBudget();
   S.goals = loadGoals();
@@ -825,6 +828,7 @@ function save() {
     localStorage.setItem("ldg-ac", JSON.stringify(S.accounts));
     localStorage.setItem("ldg-ct", JSON.stringify(S.cats));
     localStorage.setItem("ldg-sb", JSON.stringify(S.startBalances));
+    localStorage.setItem("ldg-cl", JSON.stringify(S.creditLimits));
   } catch(e) {}
 }
 
@@ -1149,6 +1153,16 @@ function importData() {
   sw("dash", document.querySelectorAll(".tab")[0]);
 }
 
+function saveCreditLimit(account) {
+  var safeId = "cl-sb-" + account.replace(/\s/g,"_");
+  var el = document.getElementById(safeId);
+  if (!el) return;
+  var val = parseFloat(el.value) || 0;
+  S.creditLimits[account] = val;
+  save(); render();
+  setStatus("Credit limit updated for " + account, "ok");
+}
+
 function saveStartBal(account) {
   var safeId = account.replace(/\s/g, "_");
   var val = parseFloat(document.getElementById("sb-" + safeId).value);
@@ -1257,10 +1271,8 @@ function render() {
       var bal = acctBalance(a);
       var isDebt = DEBT_ACCTS.indexOf(a) !== -1 || bal < 0;
       var owing = isDebt ? Math.abs(bal) : 0;
-      var openingDebit = S.txs.filter(function(t) {
-        return t.account === a && t.category === "opening-balance" && t.type === "debit";
-      }).reduce(function(s,t) { return s + (isNaN(t.amount) ? 0 : t.amount); }, 0);
-      var available = (isDebt && openingDebit > 0) ? Math.max(0, openingDebit - owing) : null;
+      var creditLimit = S.creditLimits[a] || 0;
+      var available = (isDebt && creditLimit > 0) ? Math.max(0, creditLimit - owing) : null;
       var recent = aTxs.slice().sort(function(x,y) { return new Date(y.date)-new Date(x.date); }).slice(0,4);
       var sbId = "sb-" + a.replace(/\s/g,"_");
       var sbVal = (S.startBalances[a] !== undefined ? S.startBalances[a] : 0).toFixed(2);
@@ -1302,6 +1314,7 @@ function render() {
             return html;
           })() +
           '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div>' +
+          (isDebt ? '<div class="bal-set-row"><span class="bal-set-label">Credit limit</span><input class="bal-input" type="number" id="cl-sb-' + a.replace(/\s/g,"_") + '" value="' + (creditLimit || "").toString() + '" step="0.01" placeholder="e.g. 3000"><button class="bal-save-btn" data-acct="' + a.replace(/'/g,"\\'") + '" onclick="saveCreditLimit(this.getAttribute(\'data-acct\'))">Update</button></div>' : '') +
           '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px">' +
           '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
           '</div>' +
