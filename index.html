@@ -529,6 +529,15 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <textarea class="paste-area" id="paste-input" placeholder='{"account":"CommBank Complete Access","transactions":[]}'></textarea>
         <button class="import-btn" onclick="importData()">Import transactions</button>
       </div>
+      <div id="dedup-review-card" class="card" style="display:none">
+        <div class="card-label" style="margin-bottom:10px">⚠️ Possible duplicates — review before importing</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">These transactions already exist in Ledger with the same account, date, amount and description. Uncheck any you want to skip.</p>
+        <div id="dedup-list"></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button onclick="confirmImport()" style="flex:1;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Import selected</button>
+          <button onclick="cancelImport()" style="padding:12px 16px;background:none;border:1px solid var(--border);border-radius:10px;font-size:14px;color:var(--muted);cursor:pointer;font-family:inherit">Cancel</button>
+        </div>
+      </div>
       <div class="how-box">
         <strong style="color:var(--text);display:block;margin-bottom:6px">How it works</strong>
         1. Send your bank screenshot to Claude in chat<br>
@@ -627,6 +636,37 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <select class="note-input" id="manual-tx-cat" style="cursor:pointer"></select>
       </div>
       <button onclick="saveManualTx()" style="width:100%;margin-top:6px;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Save transaction</button>
+    </div>
+  </div>
+</div>
+
+<!-- REPAYMENT MODAL -->
+<div class="modal-overlay" id="repayment-overlay" onclick="closeRepaymentOutside(event)">
+  <div class="modal" style="max-height:80vh">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div><span class="modal-title">💸 Record repayment</span><div class="modal-subtitle" id="repayment-subtitle"></div></div>
+      <button class="modal-close" onclick="closeRepaymentModal()">×</button>
+    </div>
+    <div class="modal-body" style="padding-top:14px">
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">From account</div>
+        <select class="note-input" id="repayment-source" style="cursor:pointer"></select>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Date</div>
+        <input class="note-input" type="date" id="repayment-date">
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Amounts</div>
+        <div id="repayment-amounts-list"></div>
+        <button onclick="addRepaymentAmount()" style="width:100%;margin-top:8px;padding:9px;background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">+ Add amount</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--surface2);border-radius:10px;margin-bottom:14px">
+        <span style="font-size:13px;color:var(--muted)">Total repayment</span>
+        <span id="repayment-total" style="font-size:18px;font-weight:700;color:var(--green)">$0.00</span>
+      </div>
+      <button onclick="saveRepayment()" style="width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Confirm repayment</button>
     </div>
   </div>
 </div>
@@ -1162,6 +1202,18 @@ function buildPie(data, total) {
     '</div>';
 }
 
+var pendingImport = null;
+
+function isDuplicate(tx) {
+  return S.txs.some(function(e) {
+    return e.account === tx.account &&
+      e.date === tx.date &&
+      e.type === tx.type &&
+      Math.abs(e.amount - tx.amount) < 0.001 &&
+      e.description.toLowerCase() === tx.description.toLowerCase();
+  });
+}
+
 function importData() {
   var raw = document.getElementById("paste-input").value.trim();
   if (!raw) { setStatus("Nothing to import — paste the JSON from Claude first", "err"); return; }
@@ -1179,13 +1231,62 @@ function importData() {
       account: account
     };
   });
-  S.txs = S.txs.concat(newTxs);
+
+  var dupes = newTxs.filter(function(t) { return isDuplicate(t); });
+  var clean = newTxs.filter(function(t) { return !isDuplicate(t); });
+
+  if (!dupes.length) {
+    // No dupes — import straight away
+    finishImport(newTxs, account);
+    return;
+  }
+
+  // Show review card
+  pendingImport = { all: newTxs, clean: clean, dupes: dupes, account: account };
+  var list = document.getElementById("dedup-list");
+  list.innerHTML = dupes.map(function(t, i) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">' +
+      '<input type="checkbox" id="dedup-' + i + '" style="width:18px;height:18px;cursor:pointer">' +
+      '<div style="flex:1;min-width:0">' +
+      '<div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + t.description + '</div>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + t.date + ' · ' + (t.type === "credit" ? "+" : "-") + "$" + t.amount.toFixed(2) + '</div>' +
+      '</div>' +
+      '<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:rgba(232,196,74,0.15);color:#e8c44a;flex-shrink:0">duplicate?</span>' +
+      '</div>';
+  }).join("");
+  document.getElementById("dedup-review-card").style.display = "block";
+  document.getElementById("dedup-review-card").scrollIntoView({ behavior: "smooth" });
+  setStatus(clean.length + " new · " + dupes.length + " possible duplicate" + (dupes.length !== 1 ? "s" : "") + " — review below", "ok");
+}
+
+function confirmImport() {
+  if (!pendingImport) return;
+  var checkedDupes = pendingImport.dupes.filter(function(t, i) {
+    var cb = document.getElementById("dedup-" + i);
+    return cb && cb.checked;
+  });
+  var toImport = pendingImport.clean.concat(checkedDupes);
+  finishImport(toImport, pendingImport.account);
+  document.getElementById("dedup-review-card").style.display = "none";
+  pendingImport = null;
+}
+
+function cancelImport() {
+  pendingImport = null;
+  document.getElementById("dedup-review-card").style.display = "none";
+  document.getElementById("paste-input").value = "";
+  setStatus("Import cancelled", "err");
+}
+
+function finishImport(txs, account) {
+  if (!txs.length) { setStatus("Nothing new to import", "err"); return; }
+  S.txs = S.txs.concat(txs);
   if (S.accounts.indexOf(account) === -1) S.accounts.push(account);
-  S.month = mkey(newTxs[0] ? newTxs[0].date : new Date().toISOString());
+  S.month = mkey(txs[0] ? txs[0].date : new Date().toISOString());
   S.acctFilter = "all";
   save(); render();
   document.getElementById("paste-input").value = "";
-  setStatus("Added " + newTxs.length + " transaction" + (newTxs.length !== 1 ? "s" : "") + " from " + account, "ok");
+  setStatus("Added " + txs.length + " transaction" + (txs.length !== 1 ? "s" : "") + " from " + account, "ok");
   sw("dash", document.querySelectorAll(".tab")[0]);
 }
 
@@ -1351,8 +1452,9 @@ function render() {
           })() +
           '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div>' +
           (isDebt ? '<div class="bal-set-row"><span class="bal-set-label">Credit limit</span><input class="bal-input" type="number" id="cl-sb-' + a.replace(/\s/g,"_") + '" value="' + (creditLimit || "").toString() + '" step="0.01" placeholder="e.g. 3000"><button class="bal-save-btn" data-acct="' + a.replace(/'/g,"\\'") + '" onclick="saveCreditLimit(this.getAttribute(\'data-acct\'))">Update</button></div>' : '') +
-          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px">' +
-          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
+          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px;display:flex;flex-direction:column;gap:8px">' +
+          (isDebt ? '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openRepaymentModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:linear-gradient(135deg,var(--green),#2d9e52);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">💸 Record repayment</button>' : '') +
+          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
           '</div>' +
           '</div>' +
           '</div>';
@@ -2787,7 +2889,129 @@ function saveManualTx() {
   setStatus((manualTxType === "credit" ? "+" : "-") + "$" + amount.toFixed(2) + " added to " + manualTxAccount, "ok");
 }
 
-// ── WEEKLY TRACKER ───────────────────────────────────────────────
+// ── REPAYMENT MODAL ──────────────────────────────────────────────
+var repaymentDebtAccount = null;
+var repaymentAmounts = [];
+
+function openRepaymentModal(debtAcct) {
+  repaymentDebtAccount = debtAcct;
+  repaymentAmounts = [{ id: Date.now(), value: "" }];
+
+  document.getElementById("repayment-subtitle").textContent = debtAcct + " · " + fmt(Math.abs(acctBalance(debtAcct))) + " owing";
+  document.getElementById("repayment-date").value = new Date().toISOString().slice(0,10);
+
+  // Populate source accounts — all non-debt accounts
+  var sources = S.accounts.filter(function(a) { return a !== debtAcct && DEBT_ACCTS.indexOf(a) === -1; })
+    .concat((S.manualAccts || []).map(function(a) { return a.name; }));
+  var sel = document.getElementById("repayment-source");
+  sel.innerHTML = sources.map(function(a) {
+    return '<option value="' + a + '"' + (a === "CommBank Complete Access" ? " selected" : "") + '>' + a + '</option>';
+  }).join("") || '<option value="">No accounts found</option>';
+
+  renderRepaymentAmounts();
+  document.getElementById("repayment-overlay").classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function closeRepaymentModal() {
+  document.getElementById("repayment-overlay").classList.remove("open");
+  document.body.style.overflow = "";
+  repaymentDebtAccount = null;
+  repaymentAmounts = [];
+}
+function closeRepaymentOutside(e) { if (e.target === document.getElementById("repayment-overlay")) closeRepaymentModal(); }
+
+function addRepaymentAmount() {
+  repaymentAmounts.push({ id: Date.now(), value: "" });
+  renderRepaymentAmounts();
+  // Focus the new input
+  setTimeout(function() {
+    var inputs = document.querySelectorAll(".repayment-amt-input");
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }, 50);
+}
+
+function removeRepaymentAmount(id) {
+  repaymentAmounts = repaymentAmounts.filter(function(a) { return a.id !== id; });
+  renderRepaymentAmounts();
+  updateRepaymentTotal();
+}
+
+function updateRepaymentTotal() {
+  var inputs = document.querySelectorAll(".repayment-amt-input");
+  var total = 0;
+  inputs.forEach(function(inp) { total += parseFloat(inp.value) || 0; });
+  document.getElementById("repayment-total").textContent = "$" + total.toFixed(2);
+}
+
+function renderRepaymentAmounts() {
+  var el = document.getElementById("repayment-amounts-list");
+  el.innerHTML = repaymentAmounts.map(function(a) {
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">' +
+      '<input class="note-input repayment-amt-input" type="number" placeholder="0.00" min="0" step="0.01" ' +
+      'value="' + (a.value || "") + '" ' +
+      'oninput="updateRepaymentTotal()" ' +
+      'style="flex:1;font-size:16px;font-weight:600;text-align:center">' +
+      (repaymentAmounts.length > 1
+        ? '<button onclick="removeRepaymentAmount(' + a.id + ')" style="width:36px;height:36px;background:none;border:1px solid rgba(224,85,85,0.3);border-radius:8px;color:var(--red);font-size:18px;cursor:pointer;flex-shrink:0;line-height:1">×</button>'
+        : '') +
+      '</div>';
+  }).join("");
+}
+
+function saveRepayment() {
+  var sourceAcct = document.getElementById("repayment-source").value;
+  var date = document.getElementById("repayment-date").value || new Date().toISOString().slice(0,10);
+  var inputs = document.querySelectorAll(".repayment-amt-input");
+  var amounts = [];
+  inputs.forEach(function(inp) {
+    var v = parseFloat(inp.value);
+    if (v > 0) amounts.push(v);
+  });
+
+  if (!amounts.length) { alert("Please enter at least one amount"); return; }
+  if (!sourceAcct) { alert("Please select a source account"); return; }
+
+  var newTxs = [];
+  var ts = Date.now();
+  amounts.forEach(function(amt, i) {
+    var debtDesc = repaymentDebtAccount + " Repayment";
+    var sourceDesc = "Repayment from " + sourceAcct;
+
+    // Debit on source account (money leaving)
+    newTxs.push({
+      id: "rep-src-" + ts + "-" + i,
+      description: debtDesc,
+      amount: amt,
+      date: date,
+      type: "debit",
+      category: "transfers",
+      account: sourceAcct,
+      linkedAccount: repaymentDebtAccount
+    });
+
+    // Credit on debt account (debt reducing)
+    newTxs.push({
+      id: "rep-dbt-" + ts + "-" + i,
+      description: sourceDesc,
+      amount: amt,
+      date: date,
+      type: "credit",
+      category: "transfers",
+      account: repaymentDebtAccount,
+      linkedAccount: sourceAcct
+    });
+  });
+
+  S.txs = S.txs.concat(newTxs);
+  save(); render();
+
+  var total = amounts.reduce(function(s,a) { return s+a; }, 0);
+  closeRepaymentModal();
+  setStatus("Recorded " + amounts.length + " repayment" + (amounts.length !== 1 ? "s" : "") + " totalling $" + total.toFixed(2), "ok");
+}
+
+
 function loadWeeklyTargets() {
   try { var w = localStorage.getItem("ldg-wtargets"); if (w) return JSON.parse(w); } catch(e) {}
   // Default targets based on known bills
