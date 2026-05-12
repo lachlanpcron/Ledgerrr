@@ -675,6 +675,29 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
   </div>
 </div>
 
+<!-- INSTALMENT EDIT MODAL -->
+<div class="modal-overlay" id="instalment-edit-overlay" onclick="if(event.target===this)closeInstalmentEditModal()">
+  <div class="modal" style="max-height:85vh">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div><span class="modal-title">✏️ Edit instalment plan</span></div>
+      <button class="modal-close" onclick="closeInstalmentEditModal()">×</button>
+    </div>
+    <div class="modal-body" style="padding-top:14px">
+      <input type="hidden" id="edit-inst-id">
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Description</div>
+        <input class="note-input" type="text" id="edit-inst-desc" style="width:100%">
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Payments</div>
+        <div id="edit-inst-payments"></div>
+      </div>
+      <button onclick="saveInstalmentEdit()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Save changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- INSTALMENT ADD MODAL -->
 <div class="modal-overlay" id="instalment-add-overlay" onclick="if(event.target===this)closeInstalmentModal()">
   <div class="modal" style="max-height:85vh">
@@ -1390,10 +1413,48 @@ function finishImport(txs, account, source) {
   if (S.accounts.indexOf(account) === -1) S.accounts.push(account);
   S.month = mkey(txs[0] ? txs[0].date : new Date().toISOString());
   S.acctFilter = "all";
+
+  // Auto-detect instalment purchases
+  var autoPlans = [];
+  txs.forEach(function(tx) {
+    if (tx.type !== "debit") return;
+    var isStepPay = account === "StepPay";
+    var isPayPalIn4 = (tx.description || "").toLowerCase().indexOf("pay in 4") !== -1;
+    if (!isStepPay && !isPayPalIn4) return;
+    if (tx.amount < 100) return;
+    // Check not already tracked
+    var existing = getInstalments().filter(function(i) {
+      return Math.abs(i.totalAmount - tx.amount) < 0.01 &&
+        Math.abs(new Date(i.purchaseDate) - new Date(tx.date)) < 86400000 * 3;
+    });
+    if (existing.length) return;
+    var provider = isStepPay ? "steppay" : "paypal";
+    var dates = getInstalmentDates(provider, tx.date);
+    var instAmt = +(tx.amount / 4).toFixed(2);
+    var payments = dates.map(function(d, i) {
+      return { date: d, amount: i === 3 ? +(tx.amount - instAmt * 3).toFixed(2) : instAmt, paid: false };
+    });
+    var providerLabels = { steppay: "StepPay", paypal: "PayPal Pay in 4" };
+    var instalments = getInstalments();
+    instalments.push({
+      id: "inst-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+      description: tx.description,
+      totalAmount: tx.amount,
+      purchaseDate: tx.date,
+      provider: provider,
+      providerLabel: providerLabels[provider],
+      payments: payments
+    });
+    saveInstalments(instalments);
+    autoPlans.push(tx.description);
+  });
+
   save(); render();
   var inputId = (source === 'dash') ? 'paste-input-dash' : 'paste-input';
   document.getElementById(inputId).value = "";
-  setStatus("Added " + txs.length + " transaction" + (txs.length !== 1 ? "s" : "") + " from " + account, "ok");
+  var msg = "Added " + txs.length + " transaction" + (txs.length !== 1 ? "s" : "") + " from " + account;
+  if (autoPlans.length) msg += " · 💳 Instalment plan created for " + autoPlans.join(", ");
+  setStatus(msg, "ok");
   if (source !== 'dash') sw("dash", document.querySelectorAll(".tab")[0]);
 }
 
@@ -1931,6 +1992,7 @@ function renderInstalmentTracker() {
       '<div style="font-size:11px;color:var(--muted)">$' + inst.totalAmount.toFixed(2) + ' total · ' + paidCount + '/4 paid</div>' +
       '</div>' +
       '<button onclick="deleteInstalment(\'' + inst.id + '\')" style="font-size:18px;background:none;border:none;color:var(--muted);cursor:pointer;line-height:1;padding:0;margin-left:8px;flex-shrink:0">×</button>' +
+      '<button onclick="openInstalmentEditModal(\'' + inst.id + '\')" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;font-family:inherit;margin-left:4px;flex-shrink:0">Edit</button>' +
       '</div>' +
       '<div style="display:flex;gap:6px;margin-bottom:8px">' +
       inst.payments.map(function(p, i) {
@@ -1963,6 +2025,54 @@ function selectProvider(p) {
   });
   document.getElementById("inst-custom-row").style.display = p === "custom" ? "block" : "none";
   updateInstalmentPreview();
+}
+
+
+function openInstalmentEditModal(instId) {
+  var inst = getInstalments().filter(function(i) { return i.id === instId; })[0];
+  if (!inst) return;
+  document.getElementById("edit-inst-id").value = instId;
+  document.getElementById("edit-inst-desc").value = inst.description;
+  document.getElementById("edit-inst-payments").innerHTML = inst.payments.map(function(p, i) {
+    return '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px">' +
+      '<input class="note-input edit-pay-date" type="date" value="' + p.date + '" style="font-size:13px">' +
+      '<input class="note-input edit-pay-amt" type="number" value="' + p.amount.toFixed(2) + '" min="0" step="0.01" style="font-size:13px;text-align:right">' +
+      '<label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap">' +
+      '<input type="checkbox" ' + (p.paid ? 'checked' : '') + ' style="width:16px;height:16px"> Paid</label>' +
+      '</div>';
+  }).join("");
+  document.getElementById("instalment-edit-overlay").classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function closeInstalmentEditModal() {
+  document.getElementById("instalment-edit-overlay").classList.remove("open");
+  document.body.style.overflow = "";
+}
+
+function saveInstalmentEdit() {
+  var instId = document.getElementById("edit-inst-id").value;
+  var desc = document.getElementById("edit-inst-desc").value.trim();
+  var dateInputs = document.querySelectorAll(".edit-pay-date");
+  var amtInputs = document.querySelectorAll(".edit-pay-amt");
+  var paidInputs = document.querySelectorAll("#edit-inst-payments input[type=checkbox]");
+  var instalments = getInstalments().map(function(inst) {
+    if (inst.id !== instId) return inst;
+    inst.description = desc || inst.description;
+    inst.payments = inst.payments.map(function(p, i) {
+      return {
+        date: dateInputs[i] ? dateInputs[i].value : p.date,
+        amount: amtInputs[i] ? (parseFloat(amtInputs[i].value) || p.amount) : p.amount,
+        paid: paidInputs[i] ? paidInputs[i].checked : p.paid
+      };
+    });
+    inst.totalAmount = inst.payments.reduce(function(s, p) { return s + p.amount; }, 0);
+    return inst;
+  });
+  saveInstalments(instalments);
+  closeInstalmentEditModal();
+  render();
+  setStatus("Instalment plan updated", "ok");
 }
 
 
