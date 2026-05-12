@@ -1968,7 +1968,9 @@ function renderInstalmentTracker() {
   var instalments = getInstalments();
   var card = document.getElementById("instalment-tracker-card");
   var body = document.getElementById("instalment-tracker-body");
+  if (!card || !body) return;
   card.style.display = "block";
+  var providerColors = { steppay: "#e8c44a", paypal: "#003087", custom: "var(--accent)" };
   var today = new Date(); today.setHours(0,0,0,0);
   if (!instalments.length) {
     body.innerHTML = '<div style="font-size:13px;color:var(--muted);text-align:center;padding:10px 0 14px">No instalment plans yet</div>' +
