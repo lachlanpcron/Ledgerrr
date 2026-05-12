@@ -1904,10 +1904,13 @@ function renderInstalmentTracker() {
   var instalments = getInstalments();
   var card = document.getElementById("instalment-tracker-card");
   var body = document.getElementById("instalment-tracker-body");
-  if (!instalments.length) { card.style.display = "none"; return; }
   card.style.display = "block";
   var today = new Date(); today.setHours(0,0,0,0);
-  var providerColors = { steppay: "#e8c44a", paypal: "#003087", custom: "var(--accent)" };
+  if (!instalments.length) {
+    body.innerHTML = '<div style="font-size:13px;color:var(--muted);text-align:center;padding:10px 0 14px">No instalment plans yet</div>' +
+      '<button onclick="openAddInstalmentModal()" style="width:100%;padding:9px;background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">+ Track new purchase</button>';
+    return;
+  }
   body.innerHTML = instalments.map(function(inst) {
     var paidCount = inst.payments.filter(function(p) { return p.paid; }).length;
     var allPaid = paidCount === 4;
