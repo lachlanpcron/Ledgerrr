@@ -1755,6 +1755,9 @@ function render() {
           linkedBadge +
           '<div class="tx-bottom"><span class="tx-meta">' + (tx.account || "") + '</span>' +
           '<div class="tx-actions"><select class="tx-cat-sel" onchange="chCat(\'' + tx.id + '\',this.value)">' + opts + '</select>' +
+          (tx.type === "debit" && tx.category !== "transfers"
+            ? '<button title="Track as instalment" onclick="openAddInstalmentModalPrefilled(\'' + tx.id + '\')" style="padding:4px 7px;border:1px solid var(--border);border-radius:8px;background:none;font-size:12px;cursor:pointer;color:var(--muted)">💳</button>'
+            : '') +
           '<button class="tx-note-btn' + ((hasNote || (isTransfer && tx.linkedAccount)) ? " has-note" : "") + '" onclick="openNoteModal(\'' + tx.id + '\')">' + ((hasNote || (isTransfer && tx.linkedAccount)) ? "📝" : "Note") + '</button>' +
           '<button class="tx-del" onclick="delTx(\'' + tx.id + '\')">×</button></div></div></div>';
       }).join("");
@@ -1960,6 +1963,19 @@ function selectProvider(p) {
   });
   document.getElementById("inst-custom-row").style.display = p === "custom" ? "block" : "none";
   updateInstalmentPreview();
+}
+
+
+function openAddInstalmentModalPrefilled(txId) {
+  var tx = S.txs.filter(function(t) { return t.id === txId; })[0];
+  if (!tx) return;
+  document.getElementById("inst-desc").value = tx.description;
+  document.getElementById("inst-amount").value = tx.amount.toFixed(2);
+  document.getElementById("inst-date").value = tx.date;
+  selectProvider("steppay");
+  updateInstalmentPreview();
+  document.getElementById("instalment-add-overlay").classList.add("open");
+  document.body.style.overflow = "hidden";
 }
 
 
