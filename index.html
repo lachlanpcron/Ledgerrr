@@ -430,32 +430,6 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <div class="card-label">Upcoming payments</div>
         <div id="upcoming-list"></div>
       </div>
-      <div class="card" id="instalment-tracker-card" style="display:none;margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleInstalmentTracker()">
-          <div class="card-label" style="margin-bottom:0">💳 StepPay instalments</div>
-          <span id="instalment-chevron" style="font-size:16px;color:var(--muted);transition:transform 0.2s;transform:rotate(180deg)">▾</span>
-        </div>
-        <div id="instalment-tracker-body" style="margin-top:12px;display:block"></div>
-      </div>
-      <div class="card" style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleAddDataCard()">
-          <div class="card-label" style="margin-bottom:0">➕ Add data</div>
-          <span id="add-data-chevron" style="font-size:16px;color:var(--muted);transition:transform 0.2s">▾</span>
-        </div>
-        <div id="add-data-body" style="display:none;margin-top:12px">
-          <p style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.7">Send a bank screenshot to Claude in chat. Copy the JSON it gives you and paste below.</p>
-          <textarea class="paste-area" id="paste-input-dash" placeholder='{"account":"CommBank Complete Access","transactions":[]}'></textarea>
-          <button class="import-btn" onclick="importDataFrom('dash')" style="margin-top:10px">Import transactions</button>
-          <div id="dedup-review-card-dash" style="display:none;margin-top:12px;background:var(--surface2);border-radius:12px;padding:14px">
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px">⚠️ Possible duplicates</div>
-            <div id="dedup-list-dash"></div>
-            <div style="display:flex;gap:8px;margin-top:12px">
-              <button onclick="confirmImportFrom('dash')" style="flex:1;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Import selected</button>
-              <button onclick="cancelImportFrom('dash')" style="padding:10px 14px;background:none;border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer;font-family:inherit">Cancel</button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div id="tab-calendar" style="display:none">
@@ -503,33 +477,24 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
     </div>
 
     <div id="tab-budget" style="display:none">
-      <div style="display:flex;background:var(--surface2);border-radius:12px;padding:3px;gap:2px;margin-bottom:14px">
-        <button id="budget-tab-programmed" onclick="setBudgetSubTab('programmed')" style="flex:1;padding:8px;border:none;border-radius:9px;background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;box-shadow:0 1px 4px rgba(0,0,0,0.15)">Programmed</button>
-        <button id="budget-tab-predicted" onclick="setBudgetSubTab('predicted')" style="flex:1;padding:8px;border:none;border-radius:9px;background:none;color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">Predicted</button>
+      <div id="budget-summary-card" class="card" style="margin-bottom:14px">
+        <div class="card-label">Monthly summary</div>
+        <div id="budget-summary"></div>
       </div>
-      <div id="budget-sub-programmed">
-        <div id="budget-summary-card" class="card" style="margin-bottom:14px">
-          <div class="card-label">Monthly summary</div>
-          <div id="budget-summary"></div>
-        </div>
-        <div class="card" style="margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <div class="card-label" style="margin-bottom:0">Spending averages <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(rolling up to 6 weeks)</span></div>
-          </div>
-          <div id="budget-actuals"><div class="empty" style="padding:10px 0">Import more transactions to see averages</div></div>
-        </div>
+      <div class="card" style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <span style="font-size:13px;color:var(--muted)">Budget items</span>
-          <button id="budget-edit-btn" onclick="toggleBudgetEdit()" style="padding:6px 16px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Edit</button>
+          <div class="card-label" style="margin-bottom:0">Spending averages <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(rolling up to 6 weeks)</span></div>
         </div>
-        <div id="budget-view-mode"></div>
-        <div id="budget-edit-mode" style="display:none">
-          <div id="budget-sections"></div>
-          <button onclick="addBudgetSection()" style="width:100%;padding:12px;background:none;border:1px dashed var(--border);border-radius:12px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:14px">+ Add section</button>
-        </div>
+        <div id="budget-actuals"><div class="empty" style="padding:10px 0">Import more transactions to see averages</div></div>
       </div>
-      <div id="budget-sub-predicted" style="display:none">
-        <div id="predicted-budget-content"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-size:13px;color:var(--muted)">Budget items</span>
+        <button id="budget-edit-btn" onclick="toggleBudgetEdit()" style="padding:6px 16px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Edit</button>
+      </div>
+      <div id="budget-view-mode"></div>
+      <div id="budget-edit-mode" style="display:none">
+        <div id="budget-sections"></div>
+        <button onclick="addBudgetSection()" style="width:100%;padding:12px;background:none;border:1px dashed var(--border);border-radius:12px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:14px">+ Add section</button>
       </div>
     </div>
 
@@ -564,15 +529,6 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <textarea class="paste-area" id="paste-input" placeholder='{"account":"CommBank Complete Access","transactions":[]}'></textarea>
         <button class="import-btn" onclick="importData()">Import transactions</button>
       </div>
-      <div id="dedup-review-card" class="card" style="display:none">
-        <div class="card-label" style="margin-bottom:10px">⚠️ Possible duplicates — review before importing</div>
-        <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">These transactions already exist in Ledger with the same account, date, amount and description. Uncheck any you want to skip.</p>
-        <div id="dedup-list"></div>
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button onclick="confirmImport()" style="flex:1;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Import selected</button>
-          <button onclick="cancelImport()" style="padding:12px 16px;background:none;border:1px solid var(--border);border-radius:10px;font-size:14px;color:var(--muted);cursor:pointer;font-family:inherit">Cancel</button>
-        </div>
-      </div>
       <div class="how-box">
         <strong style="color:var(--text);display:block;margin-bottom:6px">How it works</strong>
         1. Send your bank screenshot to Claude in chat<br>
@@ -591,6 +547,37 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
           <button class="add-btn" onclick="addCat()">Add</button>
         </div>
         <div id="cat-list"></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-label">Export data</div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Account</div>
+          <select class="note-input" id="export-account" style="width:100%;cursor:pointer">
+            <option value="all">All accounts</option>
+          </select>
+        </div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Date range</div>
+          <div style="display:flex;gap:8px">
+            <button id="export-range-all" onclick="setExportRange('all')" style="flex:1;padding:9px 6px;border-radius:9px;border:2px solid var(--accent);background:rgba(124,106,247,0.1);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">All data</button>
+            <button id="export-range-month" onclick="setExportRange('month')" style="flex:1;padding:9px 6px;border-radius:9px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">This month</button>
+            <button id="export-range-custom" onclick="setExportRange('custom')" style="flex:1;padding:9px 6px;border-radius:9px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Custom</button>
+          </div>
+          <div id="export-custom-dates" style="display:none;margin-top:10px;display:none">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div>
+                <div style="font-size:11px;color:var(--muted);margin-bottom:4px">From</div>
+                <input class="note-input" type="date" id="export-from" style="width:100%">
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--muted);margin-bottom:4px">To</div>
+                <input class="note-input" type="date" id="export-to" style="width:100%">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="export-summary" style="font-size:12px;color:var(--muted);margin-bottom:12px;min-height:18px"></div>
+        <button onclick="exportData()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">⬇️ Download export</button>
       </div>
       <div class="card">
         <div class="card-label">Data</div>
@@ -671,102 +658,6 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <select class="note-input" id="manual-tx-cat" style="cursor:pointer"></select>
       </div>
       <button onclick="saveManualTx()" style="width:100%;margin-top:6px;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Save transaction</button>
-    </div>
-  </div>
-</div>
-
-<!-- INSTALMENT EDIT MODAL -->
-<div class="modal-overlay" id="instalment-edit-overlay" onclick="if(event.target===this)closeInstalmentEditModal()">
-  <div class="modal" style="max-height:85vh">
-    <div class="modal-handle"></div>
-    <div class="modal-header">
-      <div><span class="modal-title">✏️ Edit instalment plan</span></div>
-      <button class="modal-close" onclick="closeInstalmentEditModal()">×</button>
-    </div>
-    <div class="modal-body" style="padding-top:14px">
-      <input type="hidden" id="edit-inst-id">
-      <div style="margin-bottom:12px">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Description</div>
-        <input class="note-input" type="text" id="edit-inst-desc" style="width:100%">
-      </div>
-      <div style="margin-bottom:14px">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Payments</div>
-        <div id="edit-inst-payments"></div>
-      </div>
-      <button onclick="saveInstalmentEdit()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Save changes</button>
-    </div>
-  </div>
-</div>
-
-<!-- INSTALMENT ADD MODAL -->
-<div class="modal-overlay" id="instalment-add-overlay" onclick="if(event.target===this)closeInstalmentModal()">
-  <div class="modal" style="max-height:85vh">
-    <div class="modal-handle"></div>
-    <div class="modal-header">
-      <div><span class="modal-title">💳 Track instalment purchase</span></div>
-      <button class="modal-close" onclick="closeInstalmentModal()">×</button>
-    </div>
-    <div class="modal-body" style="padding-top:14px">
-      <div style="margin-bottom:12px">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Provider</div>
-        <div style="display:flex;gap:8px">
-          <button onclick="selectProvider('steppay')" id="inst-btn-steppay" style="flex:1;padding:10px 6px;border-radius:10px;border:2px solid var(--accent);background:rgba(124,106,247,0.1);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">StepPay</button>
-          <button onclick="selectProvider('paypal')" id="inst-btn-paypal" style="flex:1;padding:10px 6px;border-radius:10px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">PayPal Pay in 4</button>
-          <button onclick="selectProvider('custom')" id="inst-btn-custom" style="flex:1;padding:10px 6px;border-radius:10px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Other</button>
-        </div>
-        <div id="inst-custom-row" style="display:none;margin-top:10px">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Days until first payment</div>
-          <input class="note-input" type="number" id="inst-custom-days" value="3" min="0" max="30" oninput="updateInstalmentPreview()" style="width:100%">
-        </div>
-      </div>
-      <div style="margin-bottom:12px">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Description</div>
-        <input class="note-input" type="text" id="inst-desc" placeholder="e.g. Estelle Bistro" style="width:100%">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-        <div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Total amount</div>
-          <input class="note-input" type="number" id="inst-amount" placeholder="0.00" min="0" step="0.01" oninput="updateInstalmentPreview()" style="width:100%">
-        </div>
-        <div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Purchase date</div>
-          <input class="note-input" type="date" id="inst-date" oninput="updateInstalmentPreview()" style="width:100%">
-        </div>
-      </div>
-      <input type="hidden" id="inst-provider" value="steppay">
-      <div id="inst-preview" style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px"></div>
-      <button onclick="saveInstalmentFromModal()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Add instalment plan</button>
-    </div>
-  </div>
-</div>
-
-<!-- REPAYMENT MODAL -->
-<div class="modal-overlay" id="repayment-overlay" onclick="closeRepaymentOutside(event)">
-  <div class="modal" style="max-height:80vh">
-    <div class="modal-handle"></div>
-    <div class="modal-header">
-      <div><span class="modal-title">💸 Record repayment</span><div class="modal-subtitle" id="repayment-subtitle"></div></div>
-      <button class="modal-close" onclick="closeRepaymentModal()">×</button>
-    </div>
-    <div class="modal-body" style="padding-top:14px">
-      <div style="margin-bottom:12px">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">From account</div>
-        <select class="note-input" id="repayment-source" style="cursor:pointer"></select>
-      </div>
-      <div style="margin-bottom:12px">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Date</div>
-        <input class="note-input" type="date" id="repayment-date">
-      </div>
-      <div style="margin-bottom:12px">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Amounts</div>
-        <div id="repayment-amounts-list"></div>
-        <button onclick="addRepaymentAmount()" style="width:100%;margin-top:8px;padding:9px;background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">+ Add amount</button>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--surface2);border-radius:10px;margin-bottom:14px">
-        <span style="font-size:13px;color:var(--muted)">Total repayment</span>
-        <span id="repayment-total" style="font-size:18px;font-weight:700;color:var(--green)">$0.00</span>
-      </div>
-      <button onclick="saveRepayment()" style="width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Confirm repayment</button>
     </div>
   </div>
 </div>
@@ -962,7 +853,7 @@ var S = {
   pieExpanded: false, weeklyExpanded: true, darkMode: false,
   acctExpanded: {}, budgetEditing: false, txDayExpanded: {},
   savingsPriority: [], savingsView: "weekly",
-  dismissedAlerts: {}, instalments: []
+  dismissedAlerts: {}
 };
 var noteTargetId = null;
 
@@ -981,8 +872,6 @@ function loadData() {
     }
     var cl = localStorage.getItem("ldg-cl");
     if (cl) S.creditLimits = JSON.parse(cl);
-    var inst = localStorage.getItem("ldg-inst");
-    if (inst) S.instalments = JSON.parse(inst);
   } catch(e) {}
   S.budget = loadBudget();
   S.goals = loadGoals();
@@ -1007,7 +896,6 @@ function save() {
     localStorage.setItem("ldg-ct", JSON.stringify(S.cats));
     localStorage.setItem("ldg-sb", JSON.stringify(S.startBalances));
     localStorage.setItem("ldg-cl", JSON.stringify(S.creditLimits));
-    localStorage.setItem("ldg-inst", JSON.stringify(S.instalments || []));
   } catch(e) {}
 }
 
@@ -1102,65 +990,9 @@ function exJSON(text) {
   try { return JSON.parse(text); } catch(e) {}
   var s = text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
   try { return JSON.parse(s); } catch(e) {}
-  // Try array first
-  var as = s.indexOf("["), ae = s.lastIndexOf("]");
-  if (as !== -1 && ae > as) { try { return JSON.parse(s.slice(as, ae+1)); } catch(e) {} }
-  var st = s.indexOf("{"), en = s.lastIndexOf("}");
-  if (st !== -1 && en > st) { try { return JSON.parse(s.slice(st, en+1)); } catch(e) {} }
+  var st = text.indexOf("{"), en = text.lastIndexOf("}");
+  if (st !== -1 && en > st) { try { return JSON.parse(text.slice(st, en+1)); } catch(e) {} }
   return null;
-}
-
-function finishImportMulti(txs, accounts, source) {
-  if (!txs.length) { setStatus("Nothing new to import", "err"); return; }
-  S.txs = S.txs.concat(txs);
-  accounts.forEach(function(account) {
-    if (S.accounts.indexOf(account) === -1) S.accounts.push(account);
-  });
-  S.month = mkey(txs[0] ? txs[0].date : new Date().toISOString());
-  S.acctFilter = "all";
-
-  // Auto-detect instalment purchases
-  var autoPlans = [];
-  txs.forEach(function(tx) {
-    if (tx.type !== "debit") return;
-    var isStepPay = tx.account === "StepPay";
-    var isPayPalIn4 = (tx.description || "").toLowerCase().indexOf("pay in 4") !== -1;
-    if (!isStepPay && !isPayPalIn4) return;
-    if (tx.amount < 100) return;
-    var existing = getInstalments().filter(function(i) {
-      return Math.abs(i.totalAmount - tx.amount) < 0.01 &&
-        Math.abs(new Date(i.purchaseDate) - new Date(tx.date)) < 86400000 * 3;
-    });
-    if (existing.length) return;
-    var provider = isStepPay ? "steppay" : "paypal";
-    var dates = getInstalmentDates(provider, tx.date);
-    var instAmt = +(tx.amount / 4).toFixed(2);
-    var payments = dates.map(function(d, i) {
-      return { date: d, amount: i === 3 ? +(tx.amount - instAmt * 3).toFixed(2) : instAmt, paid: false };
-    });
-    var providerLabels = { steppay: "StepPay", paypal: "PayPal Pay in 4" };
-    var instalments = getInstalments();
-    instalments.push({
-      id: "inst-" + Date.now() + "-" + Math.random().toString(36).slice(2),
-      description: tx.description,
-      totalAmount: tx.amount,
-      purchaseDate: tx.date,
-      provider: provider,
-      providerLabel: providerLabels[provider],
-      payments: payments
-    });
-    saveInstalments(instalments);
-    autoPlans.push(tx.description);
-  });
-
-  save(); render();
-  var inputId = (source === 'dash') ? 'paste-input-dash' : 'paste-input';
-  document.getElementById(inputId).value = "";
-  var accountLabel = accounts.length === 1 ? accounts[0] : accounts.length + " accounts";
-  var msg = "Added " + txs.length + " transaction" + (txs.length !== 1 ? "s" : "") + " across " + accountLabel;
-  if (autoPlans.length) msg += " · 💳 Instalment plan created for " + autoPlans.join(", ");
-  setStatus(msg, "ok");
-  if (source !== 'dash') sw("dash", document.querySelectorAll(".tab")[0]);
 }
 
 function openCatModal(catId, catLabel, catColor) {
@@ -1361,122 +1193,31 @@ function buildPie(data, total) {
     '</div>';
 }
 
-var pendingImport = null;
-var pendingImportSource = null;
-
-function isDuplicate(tx) {
-  return S.txs.some(function(e) {
-    return e.account === tx.account &&
-      e.date === tx.date &&
-      e.type === tx.type &&
-      Math.abs(e.amount - tx.amount) < 0.001 &&
-      e.description.toLowerCase() === tx.description.toLowerCase();
-  });
-}
-
-// Build merchant → category memory from existing transactions
-function getMerchantCategory(description) {
-  var desc = description.toLowerCase().trim();
-  // Find the most recently used category for this merchant
-  var matches = S.txs.filter(function(t) {
-    return t.description.toLowerCase().trim() === desc &&
-      t.category && t.category !== "uncategorised";
-  }).sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
-  return matches.length ? matches[0].category : null;
-}
-
-function importDataFrom(source) {
-  var inputId = source === 'dash' ? 'paste-input-dash' : 'paste-input';
-  var raw = document.getElementById(inputId).value.trim();
+function importData() {
+  var raw = document.getElementById("paste-input").value.trim();
   if (!raw) { setStatus("Nothing to import — paste the JSON from Claude first", "err"); return; }
   var parsed = exJSON(raw);
-  if (!parsed) { setStatus("Could not read that — copy the full JSON block from Claude", "err"); return; }
-
-  // Support both single {account, transactions} and array [{account, transactions}, ...]
-  var blocks = Array.isArray(parsed) ? parsed : [parsed];
-  if (!blocks.length || !blocks[0].transactions) { setStatus("Could not read that — copy the full JSON block from Claude", "err"); return; }
-
-  var allNewTxs = [];
-  blocks.forEach(function(block) {
-    var account = block.account || "Unknown Account";
-    var txs = (block.transactions || []).map(function(t, i) {
-      var importedCat = getCat(t.category).id === (t.category || "") ? t.category : "uncategorised";
-      var smartCat = (importedCat === "uncategorised" || !importedCat)
-        ? (getMerchantCategory(t.description || "") || "uncategorised")
-        : importedCat;
-      return {
-        id: Date.now() + "-" + Math.random().toString(36).slice(2) + "-" + i,
-        description: t.description || "Unknown",
-        amount: parseFloat(t.amount) || 0,
-        date: t.date || new Date().toISOString().slice(0,10),
-        type: t.type === "credit" ? "credit" : "debit",
-        category: smartCat,
-        account: account
-      };
-    });
-    allNewTxs = allNewTxs.concat(txs);
+  if (!parsed || !parsed.transactions) { setStatus("Could not read that — copy the full JSON block from Claude", "err"); return; }
+  var account = parsed.account || "Unknown Account";
+  var newTxs = (parsed.transactions || []).map(function(t, i) {
+    return {
+      id: Date.now() + "-" + i,
+      description: t.description || "Unknown",
+      amount: parseFloat(t.amount) || 0,
+      date: t.date || new Date().toISOString().slice(0,10),
+      type: t.type === "credit" ? "credit" : "debit",
+      category: getCat(t.category).id === (t.category || "") ? t.category : "uncategorised",
+      account: account
+    };
   });
-
-  var dupes = allNewTxs.filter(function(t) { return isDuplicate(t); });
-  var clean = allNewTxs.filter(function(t) { return !isDuplicate(t); });
-
-  // Collect unique accounts
-  var importedAccounts = blocks.map(function(b) { return b.account || "Unknown Account"; })
-    .filter(function(a, i, arr) { return arr.indexOf(a) === i; });
-
-  if (!dupes.length) {
-    finishImportMulti(allNewTxs, importedAccounts, source);
-    return;
-  }
-
-  pendingImport = { all: allNewTxs, clean: clean, dupes: dupes, accounts: importedAccounts };
-  pendingImportSource = source;
-
-  var listId = source === 'dash' ? 'dedup-list-dash' : 'dedup-list';
-  var cardId = source === 'dash' ? 'dedup-review-card-dash' : 'dedup-review-card';
-  var list = document.getElementById(listId);
-  list.innerHTML = dupes.map(function(t, i) {
-    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">' +
-      '<input type="checkbox" id="dedup-' + source + '-' + i + '" style="width:18px;height:18px;cursor:pointer">' +
-      '<div style="flex:1;min-width:0">' +
-      '<div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + t.description + '</div>' +
-      '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + t.account + ' · ' + t.date + ' · ' + (t.type === "credit" ? "+" : "-") + "$" + t.amount.toFixed(2) + '</div>' +
-      '</div>' +
-      '<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:rgba(232,196,74,0.15);color:#e8c44a;flex-shrink:0">duplicate?</span>' +
-      '</div>';
-  }).join("");
-  document.getElementById(cardId).style.display = "block";
-  setStatus(clean.length + " new · " + dupes.length + " possible duplicate" + (dupes.length !== 1 ? "s" : "") + " — review below", "ok");
-}
-
-function importData() { importDataFrom('add'); }
-
-function confirmImportFrom(source) {
-  if (!pendingImport) return;
-  var checkedDupes = pendingImport.dupes.filter(function(t, i) {
-    var cb = document.getElementById("dedup-" + source + "-" + i);
-    return cb && cb.checked;
-  });
-  finishImportMulti(pendingImport.clean.concat(checkedDupes), pendingImport.accounts, source);
-  document.getElementById(source === 'dash' ? 'dedup-review-card-dash' : 'dedup-review-card').style.display = "none";
-  pendingImport = null;
-  pendingImportSource = null;
-}
-
-function confirmImport() { confirmImportFrom('add'); }
-
-function cancelImportFrom(source) {
-  pendingImport = null;
-  pendingImportSource = null;
-  document.getElementById(source === 'dash' ? 'dedup-review-card-dash' : 'dedup-review-card').style.display = "none";
-  document.getElementById(source === 'dash' ? 'paste-input-dash' : 'paste-input').value = "";
-  setStatus("Import cancelled", "err");
-}
-
-function cancelImport() { cancelImportFrom('add'); }
-
-function finishImport(txs, account, source) {
-  finishImportMulti(txs, [account], source);
+  S.txs = S.txs.concat(newTxs);
+  if (S.accounts.indexOf(account) === -1) S.accounts.push(account);
+  S.month = mkey(newTxs[0] ? newTxs[0].date : new Date().toISOString());
+  S.acctFilter = "all";
+  save(); render();
+  document.getElementById("paste-input").value = "";
+  setStatus("Added " + newTxs.length + " transaction" + (newTxs.length !== 1 ? "s" : "") + " from " + account, "ok");
+  sw("dash", document.querySelectorAll(".tab")[0]);
 }
 
 function saveCreditLimit(account) {
@@ -1641,9 +1382,8 @@ function render() {
           })() +
           '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div>' +
           (isDebt ? '<div class="bal-set-row"><span class="bal-set-label">Credit limit</span><input class="bal-input" type="number" id="cl-sb-' + a.replace(/\s/g,"_") + '" value="' + (creditLimit || "").toString() + '" step="0.01" placeholder="e.g. 3000"><button class="bal-save-btn" data-acct="' + a.replace(/'/g,"\\'") + '" onclick="saveCreditLimit(this.getAttribute(\'data-acct\'))">Update</button></div>' : '') +
-          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px;display:flex;flex-direction:column;gap:8px">' +
-          (isDebt ? '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openRepaymentModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:linear-gradient(135deg,var(--green),#2d9e52);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">💸 Record repayment</button>' : '') +
-          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
+          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px">' +
+          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
           '</div>' +
           '</div>' +
           '</div>';
@@ -1837,9 +1577,6 @@ function render() {
           linkedBadge +
           '<div class="tx-bottom"><span class="tx-meta">' + (tx.account || "") + '</span>' +
           '<div class="tx-actions"><select class="tx-cat-sel" onchange="chCat(\'' + tx.id + '\',this.value)">' + opts + '</select>' +
-          (tx.type === "debit" && tx.category !== "transfers"
-            ? '<button title="Track as instalment" onclick="openAddInstalmentModalPrefilled(\'' + tx.id + '\')" style="padding:4px 7px;border:1px solid var(--border);border-radius:8px;background:none;font-size:12px;cursor:pointer;color:var(--muted)">💳</button>'
-            : '') +
           '<button class="tx-note-btn' + ((hasNote || (isTransfer && tx.linkedAccount)) ? " has-note" : "") + '" onclick="openNoteModal(\'' + tx.id + '\')">' + ((hasNote || (isTransfer && tx.linkedAccount)) ? "📝" : "Note") + '</button>' +
           '<button class="tx-del" onclick="delTx(\'' + tx.id + '\')">×</button></div></div></div>';
       }).join("");
@@ -1869,7 +1606,6 @@ function render() {
   renderSpendingAlerts();
   renderRecurringAlerts();
   renderWeeklyTracker();
-  renderInstalmentTracker();
 }
 
 function sw(name, btn) {
@@ -1880,6 +1616,7 @@ function sw(name, btn) {
   if (name === "budget") renderBudget();
   if (name === "goals") renderGoals();
   if (name === "calendar") renderCalendar();
+  if (name === "settings") initExportUI();
 }
 function selMonth(m) { S.month = m; S.view = "month"; render(); }
 function selWeek(w) { S.week = w; S.view = "week"; render(); }
@@ -1887,313 +1624,9 @@ function setView(v) { S.view = v; render(); }
 function setCatFilter(cat) { S.catFilter = cat; render(); }
 function setAF(a) { S.acctFilter = a; render(); }
 function chCat(id, cat) {
-  var tx = S.txs.filter(function(t) { return t.id === id; })[0];
-  if (!tx) return;
-  // Apply to this transaction first
   S.txs = S.txs.map(function(t) { return t.id === id ? Object.assign({}, t, {category: cat}) : t; });
-  save();
-  // Check if there are other transactions with same description that have different category
-  var sameDesc = S.txs.filter(function(t) {
-    return t.id !== id &&
-      t.description.toLowerCase().trim() === tx.description.toLowerCase().trim() &&
-      t.category !== cat;
-  });
-  if (sameDesc.length > 0) {
-    var catLabel = getCat(cat).label;
-    if (confirm('Apply "' + catLabel + '" to all ' + sameDesc.length + ' other "' + tx.description + '" transaction' + (sameDesc.length !== 1 ? 's' : '') + '?')) {
-      S.txs = S.txs.map(function(t) {
-        if (t.description.toLowerCase().trim() === tx.description.toLowerCase().trim()) {
-          return Object.assign({}, t, {category: cat});
-        }
-        return t;
-      });
-      save();
-      setStatus('Updated all "' + tx.description + '" to ' + catLabel, "ok");
-    }
-  }
-  render();
+  save(); render();
 }
-
-// ── INSTALMENT TRACKER ───────────────────────────────────────────
-function toggleInstalmentTracker() {
-  var body = document.getElementById("instalment-tracker-body");
-  var chev = document.getElementById("instalment-chevron");
-  var open = body.style.display !== "none";
-  body.style.display = open ? "none" : "block";
-  chev.style.transform = open ? "" : "rotate(180deg)";
-}
-
-function toggleAddDataCard() {
-  var body = document.getElementById("add-data-body");
-  var chev = document.getElementById("add-data-chevron");
-  var open = body.style.display !== "none";
-  body.style.display = open ? "none" : "block";
-  chev.style.transform = open ? "" : "rotate(180deg)";
-}
-
-function getInstalments() {
-  return S.instalments || [];
-}
-
-function saveInstalments(arr) {
-  S.instalments = arr;
-  save();
-}
-
-function addInstalment(description, amount, purchaseDate) {
-  var instalments = getInstalments();
-  // First payment ~3 days after purchase, then every 14 days
-  var first = new Date(purchaseDate);
-  first.setDate(first.getDate() + 3);
-  var payments = [];
-  for (var i = 0; i < 4; i++) {
-    var d = new Date(first);
-    d.setDate(d.getDate() + (i * 14));
-    payments.push({ date: d.toISOString().slice(0,10), amount: +(amount/4).toFixed(2), paid: false });
-  }
-  // Adjust for rounding so total is exact
-  var diff = +(amount - payments.reduce(function(s,p) { return s+p.amount; }, 0)).toFixed(2);
-  if (diff !== 0) payments[3].amount = +(payments[3].amount + diff).toFixed(2);
-
-  instalments.push({
-    id: "inst-" + Date.now(),
-    description: description,
-    totalAmount: amount,
-    purchaseDate: purchaseDate,
-    payments: payments
-  });
-  saveInstalments(instalments);
-  render();
-}
-
-function markInstalmentPaid(instId, payIdx) {
-  var instalments = getInstalments();
-  instalments = instalments.map(function(inst) {
-    if (inst.id !== instId) return inst;
-    inst.payments = inst.payments.map(function(p, i) {
-      return i === payIdx ? Object.assign({}, p, {paid: true}) : p;
-    });
-    return inst;
-  });
-  saveInstalments(instalments);
-  render();
-}
-
-function deleteInstalment(instId) {
-  if (!confirm("Remove this instalment plan?")) return;
-  saveInstalments(getInstalments().filter(function(i) { return i.id !== instId; }));
-  render();
-}
-
-function renderInstalmentTracker() {
-  var instalments = getInstalments();
-  var card = document.getElementById("instalment-tracker-card");
-  var body = document.getElementById("instalment-tracker-body");
-  if (!card || !body) return;
-  card.style.display = "block";
-  var providerColors = { steppay: "#e8c44a", paypal: "#003087", custom: "var(--accent)" };
-  var today = new Date(); today.setHours(0,0,0,0);
-  if (!instalments.length) {
-    body.innerHTML = '<div style="font-size:13px;color:var(--muted);text-align:center;padding:10px 0 14px">No instalment plans yet</div>' +
-      '<button onclick="openAddInstalmentModal()" style="width:100%;padding:9px;background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">+ Track new purchase</button>';
-    return;
-  }
-  body.innerHTML = instalments.map(function(inst) {
-    var paidCount = inst.payments.filter(function(p) { return p.paid; }).length;
-    var allPaid = paidCount === 4;
-    var nextPayment = inst.payments.filter(function(p) { return !p.paid; })[0];
-    var daysUntil = nextPayment ? Math.ceil((new Date(nextPayment.date) - today) / (1000*60*60*24)) : null;
-    var providerLabel = inst.providerLabel || "Pay in 4";
-    var providerColor = providerColors[inst.provider] || "var(--accent)";
-    return '<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">' +
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">' +
-      '<div style="flex:1;min-width:0">' +
-      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">' +
-      '<span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + inst.description + '</span>' +
-      '<span style="font-size:10px;padding:1px 7px;border-radius:8px;background:' + providerColor + '22;color:' + providerColor + ';flex-shrink:0;border:1px solid ' + providerColor + '44">' + providerLabel + '</span>' +
-      '</div>' +
-      '<div style="font-size:11px;color:var(--muted)">$' + inst.totalAmount.toFixed(2) + ' total · ' + paidCount + '/4 paid</div>' +
-      '</div>' +
-      '<button onclick="deleteInstalment(\'' + inst.id + '\')" style="font-size:18px;background:none;border:none;color:var(--muted);cursor:pointer;line-height:1;padding:0;margin-left:8px;flex-shrink:0">×</button>' +
-      '<button onclick="openInstalmentEditModal(\'' + inst.id + '\')" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;font-family:inherit;margin-left:4px;flex-shrink:0">Edit</button>' +
-      '</div>' +
-      '<div style="display:flex;gap:6px;margin-bottom:8px">' +
-      inst.payments.map(function(p, i) {
-        var overdue = !p.paid && new Date(p.date) < today;
-        return '<div style="flex:1;text-align:center">' +
-          '<div style="width:100%;height:6px;border-radius:3px;background:' + (p.paid ? 'var(--green)' : overdue ? 'var(--red)' : 'var(--border)') + ';margin-bottom:4px"></div>' +
-          '<div style="font-size:10px;color:' + (p.paid ? 'var(--green)' : overdue ? 'var(--red)' : 'var(--muted)') + '">$' + p.amount.toFixed(2) + '</div>' +
-          '</div>';
-      }).join("") +
-      '</div>' +
-      (!allPaid && nextPayment
-        ? '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--surface2);border-radius:8px;padding:8px 12px">' +
-          '<div style="font-size:12px;color:' + (daysUntil !== null && daysUntil < 0 ? 'var(--red)' : 'var(--muted)') + '">Next: $' + nextPayment.amount.toFixed(2) + ' · ' +
-          (daysUntil === null ? '' : daysUntil < 0 ? Math.abs(daysUntil) + ' days overdue' : daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : 'in ' + daysUntil + ' days') + '</div>' +
-          '<button onclick="markInstalmentPaid(\'' + inst.id + '\',' + inst.payments.indexOf(nextPayment) + ')" style="font-size:12px;padding:5px 12px;background:var(--green);color:#fff;border:none;border-radius:7px;cursor:pointer;font-family:inherit">Mark paid</button>' +
-          '</div>'
-        : '<div style="font-size:12px;color:var(--green);text-align:center;padding:6px">✓ All paid</div>') +
-      '</div>';
-  }).join("") +
-  '<button onclick="openAddInstalmentModal()" style="width:100%;padding:9px;background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">+ Track new purchase</button>';
-}
-
-function selectProvider(p) {
-  document.getElementById("inst-provider").value = p;
-  ["steppay","paypal","custom"].forEach(function(id) {
-    var btn = document.getElementById("inst-btn-" + id);
-    btn.style.border = id === p ? "2px solid var(--accent)" : "1px solid var(--border)";
-    btn.style.background = id === p ? "rgba(124,106,247,0.1)" : "none";
-    btn.style.color = id === p ? "var(--text)" : "var(--muted)";
-  });
-  document.getElementById("inst-custom-row").style.display = p === "custom" ? "block" : "none";
-  updateInstalmentPreview();
-}
-
-
-function openInstalmentEditModal(instId) {
-  var inst = getInstalments().filter(function(i) { return i.id === instId; })[0];
-  if (!inst) return;
-  document.getElementById("edit-inst-id").value = instId;
-  document.getElementById("edit-inst-desc").value = inst.description;
-  document.getElementById("edit-inst-payments").innerHTML = inst.payments.map(function(p, i) {
-    return '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px">' +
-      '<input class="note-input edit-pay-date" type="date" value="' + p.date + '" style="font-size:13px">' +
-      '<input class="note-input edit-pay-amt" type="number" value="' + p.amount.toFixed(2) + '" min="0" step="0.01" style="font-size:13px;text-align:right">' +
-      '<label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap">' +
-      '<input type="checkbox" ' + (p.paid ? 'checked' : '') + ' style="width:16px;height:16px"> Paid</label>' +
-      '</div>';
-  }).join("");
-  document.getElementById("instalment-edit-overlay").classList.add("open");
-  document.body.style.overflow = "hidden";
-}
-
-function closeInstalmentEditModal() {
-  document.getElementById("instalment-edit-overlay").classList.remove("open");
-  document.body.style.overflow = "";
-}
-
-function saveInstalmentEdit() {
-  var instId = document.getElementById("edit-inst-id").value;
-  var desc = document.getElementById("edit-inst-desc").value.trim();
-  var dateInputs = document.querySelectorAll(".edit-pay-date");
-  var amtInputs = document.querySelectorAll(".edit-pay-amt");
-  var paidInputs = document.querySelectorAll("#edit-inst-payments input[type=checkbox]");
-  var instalments = getInstalments().map(function(inst) {
-    if (inst.id !== instId) return inst;
-    inst.description = desc || inst.description;
-    inst.payments = inst.payments.map(function(p, i) {
-      return {
-        date: dateInputs[i] ? dateInputs[i].value : p.date,
-        amount: amtInputs[i] ? (parseFloat(amtInputs[i].value) || p.amount) : p.amount,
-        paid: paidInputs[i] ? paidInputs[i].checked : p.paid
-      };
-    });
-    inst.totalAmount = inst.payments.reduce(function(s, p) { return s + p.amount; }, 0);
-    return inst;
-  });
-  saveInstalments(instalments);
-  closeInstalmentEditModal();
-  render();
-  setStatus("Instalment plan updated", "ok");
-}
-
-
-function openAddInstalmentModalPrefilled(txId) {
-  var tx = S.txs.filter(function(t) { return t.id === txId; })[0];
-  if (!tx) return;
-  document.getElementById("inst-desc").value = tx.description;
-  document.getElementById("inst-amount").value = tx.amount.toFixed(2);
-  document.getElementById("inst-date").value = tx.date;
-  selectProvider("steppay");
-  updateInstalmentPreview();
-  document.getElementById("instalment-add-overlay").classList.add("open");
-  document.body.style.overflow = "hidden";
-}
-
-
-function openAddInstalmentModal() {
-  document.getElementById("inst-desc").value = "";
-  document.getElementById("inst-amount").value = "";
-  document.getElementById("inst-date").value = new Date().toISOString().slice(0,10);
-  document.getElementById("inst-provider").value = "steppay";
-  selectProvider("steppay");
-  updateInstalmentPreview();
-  document.getElementById("instalment-add-overlay").classList.add("open");
-  document.body.style.overflow = "hidden";
-}
-
-function closeInstalmentModal() {
-  document.getElementById("instalment-add-overlay").classList.remove("open");
-  document.body.style.overflow = "";
-}
-
-function updateInstalmentPreview() {
-  var amt = parseFloat(document.getElementById("inst-amount").value) || 0;
-  var provider = document.getElementById("inst-provider").value;
-  var date = document.getElementById("inst-date").value || new Date().toISOString().slice(0,10);
-  var preview = document.getElementById("inst-preview");
-  if (!amt || amt <= 0) { preview.innerHTML = ""; return; }
-  var dates = getInstalmentDates(provider, date);
-  var instAmt = +(amt / 4).toFixed(2);
-  var last = +(amt - instAmt * 3).toFixed(2);
-  preview.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Payment schedule:</div>' +
-    dates.map(function(d, i) {
-      var payAmt = i === 3 ? last : instAmt;
-      var dt = new Date(d);
-      var label = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()] + ' ' + dt.getDate() + ' ' + MO[dt.getMonth()];
-      return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">' +
-        '<span style="color:var(--muted)">' + label + (i === 0 ? ' <span style="color:var(--accent);font-size:10px">1st</span>' : '') + '</span>' +
-        '<span style="font-weight:600">$' + payAmt.toFixed(2) + '</span>' +
-        '</div>';
-    }).join("");
-}
-
-function getInstalmentDates(provider, purchaseDate) {
-  var base = new Date(purchaseDate);
-  var firstOffset = provider === 'paypal' ? 0 : provider === 'steppay' ? 3 : parseInt(document.getElementById("inst-custom-days").value) || 3;
-  var dates = [];
-  for (var i = 0; i < 4; i++) {
-    var d = new Date(base);
-    d.setDate(base.getDate() + firstOffset + (i * 14));
-    dates.push(d.toISOString().slice(0,10));
-  }
-  return dates;
-}
-
-function saveInstalmentFromModal() {
-  var desc = document.getElementById("inst-desc").value.trim();
-  var amt = parseFloat(document.getElementById("inst-amount").value);
-  var date = document.getElementById("inst-date").value;
-  var provider = document.getElementById("inst-provider").value;
-  if (!desc) { alert("Please enter a description"); return; }
-  if (!amt || amt <= 0) { alert("Please enter a valid amount"); return; }
-  if (!date) { alert("Please enter a purchase date"); return; }
-  var dates = getInstalmentDates(provider, date);
-  var instAmt = +(amt / 4).toFixed(2);
-  var payments = dates.map(function(d, i) {
-    return { date: d, amount: i === 3 ? +(amt - instAmt * 3).toFixed(2) : instAmt, paid: false };
-  });
-  var providerLabels = { steppay: "StepPay", paypal: "PayPal Pay in 4", custom: "Pay in 4" };
-  var instalments = getInstalments();
-  instalments.push({
-    id: "inst-" + Date.now(),
-    description: desc,
-    totalAmount: amt,
-    purchaseDate: date,
-    provider: provider,
-    providerLabel: providerLabels[provider] || "Pay in 4",
-    payments: payments
-  });
-  saveInstalments(instalments);
-  closeInstalmentModal();
-  // Show tracker card
-  document.getElementById("instalment-tracker-card").style.display = "block";
-  render();
-  setStatus("Instalment plan added for " + desc, "ok");
-}
-
-
 function delTx(id) {
   if (confirm("Delete this transaction?")) {
     S.txs = S.txs.filter(function(t) { return t.id !== id; });
@@ -2216,155 +1649,7 @@ function rmCat(id) {
   save(); render();
 }
 
-// ── BUDGET SUB-TABS ──────────────────────────────────────────────
-var budgetSubTab = "programmed";
-
-function setBudgetSubTab(tab) {
-  budgetSubTab = tab;
-  document.getElementById("budget-sub-programmed").style.display = tab === "programmed" ? "block" : "none";
-  document.getElementById("budget-sub-predicted").style.display = tab === "predicted" ? "block" : "none";
-  var btnP = document.getElementById("budget-tab-programmed");
-  var btnR = document.getElementById("budget-tab-predicted");
-  btnP.style.background = tab === "programmed" ? "var(--surface)" : "none";
-  btnP.style.color = tab === "programmed" ? "var(--text)" : "var(--muted)";
-  btnP.style.fontWeight = tab === "programmed" ? "600" : "500";
-  btnP.style.boxShadow = tab === "programmed" ? "0 1px 4px rgba(0,0,0,0.15)" : "none";
-  btnR.style.background = tab === "predicted" ? "var(--surface)" : "none";
-  btnR.style.color = tab === "predicted" ? "var(--text)" : "var(--muted)";
-  btnR.style.fontWeight = tab === "predicted" ? "600" : "500";
-  btnR.style.boxShadow = tab === "predicted" ? "0 1px 4px rgba(0,0,0,0.15)" : "none";
-  if (tab === "predicted") renderPredictedBudget();
-}
-
-function renderPredictedBudget() {
-  var cm = curMonth();
-  var today = new Date(); today.setHours(0,0,0,0);
-  var monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  var monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  var daysInMonth = monthEnd.getDate();
-  var dayOfMonth = today.getDate();
-  var daysRemaining = daysInMonth - dayOfMonth;
-  var projectionFactor = daysInMonth / dayOfMonth; // scale actual spend to full month
-
-  // Current month transactions
-  var monthTxs = S.txs.filter(function(t) { return mkey(t.date) === cm; });
-  var spendTxs = monthTxs.filter(function(t) {
-    return t.type === "debit" && t.category !== "transfers" && t.category !== "opening-balance";
-  });
-
-  // Actual spend by category so far this month
-  var actualByCat = {};
-  spendTxs.forEach(function(t) {
-    actualByCat[t.category] = (actualByCat[t.category] || 0) + t.amount;
-  });
-
-  // Projected spend by category (scale to full month)
-  var projByCat = {};
-  Object.keys(actualByCat).forEach(function(cat) {
-    projByCat[cat] = actualByCat[cat] * projectionFactor;
-  });
-
-  // Programmed budget by category (from linkedCategory on budget items)
-  var budgetByCat = {};
-  S.budget.forEach(function(sec) {
-    if (sec.name === "Income") return;
-    sec.items.forEach(function(item) {
-      if (item.linkedCategory) {
-        budgetByCat[item.linkedCategory] = (budgetByCat[item.linkedCategory] || 0) + itemMonthly(item);
-      }
-    });
-  });
-
-  // Total programmed budget expenses (for unbudgeted context)
-  var totalBudgeted = S.budget.filter(function(s) { return s.name !== "Income"; })
-    .reduce(function(s, sec) { return s + sectionMonthly(sec); }, 0);
-
-  // All categories with any activity
-  var allCats = {};
-  Object.keys(projByCat).forEach(function(c) { allCats[c] = true; });
-  Object.keys(budgetByCat).forEach(function(c) { allCats[c] = true; });
-
-  // Sort: budgeted cats first (by projected desc), then unbudgeted
-  var budgetedCats = Object.keys(allCats).filter(function(c) { return budgetByCat[c]; })
-    .sort(function(a,b) { return (projByCat[b]||0) - (projByCat[a]||0); });
-  var unbudgetedCats = Object.keys(allCats).filter(function(c) { return !budgetByCat[c] && projByCat[c]; })
-    .sort(function(a,b) { return (projByCat[b]||0) - (projByCat[a]||0); });
-
-  var totalProjected = Object.keys(projByCat).reduce(function(s,c) { return s + projByCat[c]; }, 0);
-  var totalActual = Object.keys(actualByCat).reduce(function(s,c) { return s + actualByCat[c]; }, 0);
-
-  // Summary card
-  var overUnder = totalBudgeted - totalProjected;
-  var summaryColor = overUnder >= 0 ? "var(--green)" : "var(--red)";
-  var el = document.getElementById("predicted-budget-content");
-
-  var summaryHtml = '<div class="card" style="margin-bottom:14px">' +
-    '<div class="card-label">' + cm + ' · day ' + dayOfMonth + ' of ' + daysInMonth + '</div>' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
-    '<span style="font-size:13px;color:var(--muted)">Spent so far</span>' +
-    '<span style="font-size:15px;font-weight:600;color:var(--red)">$' + totalActual.toFixed(2) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
-    '<span style="font-size:13px;color:var(--muted)">Projected full month</span>' +
-    '<span style="font-size:15px;font-weight:600;color:var(--red)">$' + totalProjected.toFixed(2) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
-    '<span style="font-size:13px;color:var(--muted)">Programmed budget</span>' +
-    '<span style="font-size:15px;font-weight:600">$' + totalBudgeted.toFixed(2) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0">' +
-    '<span style="font-size:13px;font-weight:600">vs budget</span>' +
-    '<span style="font-size:16px;font-weight:700;color:' + summaryColor + '">' + (overUnder >= 0 ? "$" + overUnder.toFixed(2) + " under" : "$" + Math.abs(overUnder).toFixed(2) + " over") + '</span></div>' +
-    '</div>';
-
-  // Category rows
-  function catRow(cat, proj, budget, actual) {
-    var catInfo = getCat(cat);
-    var hasBudget = budget > 0;
-    var delta = hasBudget ? budget - proj : null;
-    var pct = hasBudget ? Math.min(100, (actual / budget) * 100) : 0;
-    var barColor = !hasBudget ? "var(--accent)" : pct > 100 ? "var(--red)" : pct > 80 ? "var(--orange)" : "var(--green)";
-    var deltaColor = delta === null ? "var(--muted)" : delta >= 0 ? "var(--green)" : "var(--red)";
-    var deltaText = delta === null ? "unbudgeted" : (delta >= 0 ? "-$" + delta.toFixed(0) : "+$" + Math.abs(delta).toFixed(0));
-    return '<div style="margin-bottom:14px">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">' +
-      '<div style="display:flex;align-items:center;gap:6px">' +
-      '<span style="width:8px;height:8px;border-radius:50%;background:' + catInfo.color + ';display:inline-block;flex-shrink:0"></span>' +
-      '<span style="font-size:13px;font-weight:500">' + catInfo.label + '</span>' +
-      (hasBudget ? '' : '<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(124,106,247,0.12);color:var(--accent)">unbudgeted</span>') +
-      '</div>' +
-      '<span style="font-size:12px;font-weight:600;color:' + deltaColor + '">' + deltaText + '</span>' +
-      '</div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px">' +
-      '<span>Spent: $' + actual.toFixed(2) + ' · Proj: $' + proj.toFixed(2) + '</span>' +
-      (hasBudget ? '<span>Budget: $' + budget.toFixed(2) + '</span>' : '') +
-      '</div>' +
-      (hasBudget
-        ? '<div style="height:5px;background:var(--border);border-radius:3px"><div style="height:100%;border-radius:3px;background:' + barColor + ';width:' + Math.min(100, pct).toFixed(1) + '%"></div></div>'
-        : '') +
-      '</div>';
-  }
-
-  var budgetedHtml = budgetedCats.length
-    ? '<div class="card" style="margin-bottom:14px"><div class="card-label" style="margin-bottom:14px">Budgeted categories</div>' +
-      budgetedCats.map(function(c) {
-        return catRow(c, projByCat[c] || 0, budgetByCat[c] || 0, actualByCat[c] || 0);
-      }).join("") + '</div>'
-    : '';
-
-  var unbudgetedHtml = unbudgetedCats.length
-    ? '<div class="card" style="margin-bottom:14px"><div class="card-label" style="margin-bottom:14px">Unbudgeted spending</div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">These categories have no budget line. Consider adding them to your programmed budget.</div>' +
-      unbudgetedCats.map(function(c) {
-        return catRow(c, projByCat[c] || 0, 0, actualByCat[c] || 0);
-      }).join("") + '</div>'
-    : '';
-
-  var noCatsHtml = (!budgetedCats.length && !unbudgetedCats.length)
-    ? '<div class="card"><div class="empty">No spending data for ' + cm + ' yet</div></div>'
-    : '';
-
-  el.innerHTML = summaryHtml + budgetedHtml + unbudgetedHtml + noCatsHtml;
-}
-
-
+// ── BUDGET ──────────────────────────────────────────────────────
 var DEFAULT_BUDGET = [
   { id: "b-income", name: "Income", items: [
     { id: "bi-1", name: "Salary", freq: 4, amount: 750 }
@@ -2581,7 +1866,6 @@ function renderBudget() {
   var editEl = document.getElementById("budget-edit-mode");
   if (viewEl) viewEl.style.display = S.budgetEditing ? "none" : "block";
   if (editEl) editEl.style.display = S.budgetEditing ? "block" : "none";
-  if (budgetSubTab === "predicted") renderPredictedBudget();
 }
 
 function updateBudgetItem(si, ii, field, val) {
@@ -3535,126 +2819,104 @@ function saveManualTx() {
   setStatus((manualTxType === "credit" ? "+" : "-") + "$" + amount.toFixed(2) + " added to " + manualTxAccount, "ok");
 }
 
-// ── REPAYMENT MODAL ──────────────────────────────────────────────
-var repaymentDebtAccount = null;
-var repaymentAmounts = [];
+// ── EXPORT ───────────────────────────────────────────────────────
+var exportRange = 'all';
 
-function openRepaymentModal(debtAcct) {
-  repaymentDebtAccount = debtAcct;
-  repaymentAmounts = [{ id: Date.now(), value: "" }];
-
-  document.getElementById("repayment-subtitle").textContent = debtAcct + " · " + fmt(Math.abs(acctBalance(debtAcct))) + " owing";
-  document.getElementById("repayment-date").value = new Date().toISOString().slice(0,10);
-
-  // Populate source accounts — all non-debt accounts
-  var sources = S.accounts.filter(function(a) { return a !== debtAcct && DEBT_ACCTS.indexOf(a) === -1; })
-    .concat((S.manualAccts || []).map(function(a) { return a.name; }));
-  var sel = document.getElementById("repayment-source");
-  sel.innerHTML = sources.map(function(a) {
-    return '<option value="' + a + '"' + (a === "CommBank Complete Access" ? " selected" : "") + '>' + a + '</option>';
-  }).join("") || '<option value="">No accounts found</option>';
-
-  renderRepaymentAmounts();
-  document.getElementById("repayment-overlay").classList.add("open");
-  document.body.style.overflow = "hidden";
+function setExportRange(range) {
+  exportRange = range;
+  ['all','month','custom'].forEach(function(r) {
+    var btn = document.getElementById('export-range-' + r);
+    if (!btn) return;
+    btn.style.border = r === range ? '2px solid var(--accent)' : '1px solid var(--border)';
+    btn.style.background = r === range ? 'rgba(124,106,247,0.1)' : 'none';
+    btn.style.color = r === range ? 'var(--text)' : 'var(--muted)';
+  });
+  var customDates = document.getElementById('export-custom-dates');
+  if (customDates) customDates.style.display = range === 'custom' ? 'block' : 'none';
+  updateExportSummary();
 }
 
-function closeRepaymentModal() {
-  document.getElementById("repayment-overlay").classList.remove("open");
-  document.body.style.overflow = "";
-  repaymentDebtAccount = null;
-  repaymentAmounts = [];
-}
-function closeRepaymentOutside(e) { if (e.target === document.getElementById("repayment-overlay")) closeRepaymentModal(); }
-
-function addRepaymentAmount() {
-  repaymentAmounts.push({ id: Date.now(), value: "" });
-  renderRepaymentAmounts();
-  // Focus the new input
-  setTimeout(function() {
-    var inputs = document.querySelectorAll(".repayment-amt-input");
-    if (inputs.length) inputs[inputs.length - 1].focus();
-  }, 50);
+function updateExportSummary() {
+  var acct = document.getElementById('export-account');
+  var summary = document.getElementById('export-summary');
+  if (!acct || !summary) return;
+  var txs = getExportTxs(acct.value, exportRange);
+  summary.textContent = txs.length + ' transaction' + (txs.length !== 1 ? 's' : '') + ' selected';
 }
 
-function removeRepaymentAmount(id) {
-  repaymentAmounts = repaymentAmounts.filter(function(a) { return a.id !== id; });
-  renderRepaymentAmounts();
-  updateRepaymentTotal();
+function getExportTxs(account, range) {
+  var txs = S.txs.slice();
+  if (account !== 'all') txs = txs.filter(function(t) { return t.account === account; });
+  var today = new Date().toISOString().slice(0,10);
+  if (range === 'month') {
+    var cm = curMonth();
+    txs = txs.filter(function(t) { return mkey(t.date) === cm; });
+  } else if (range === 'custom') {
+    var from = document.getElementById('export-from').value;
+    var to = document.getElementById('export-to').value;
+    if (from) txs = txs.filter(function(t) { return t.date >= from; });
+    if (to) txs = txs.filter(function(t) { return t.date <= to; });
+  }
+  return txs.sort(function(a,b) { return new Date(b.date) - new Date(a.date); });
 }
 
-function updateRepaymentTotal() {
-  var inputs = document.querySelectorAll(".repayment-amt-input");
-  var total = 0;
-  inputs.forEach(function(inp) { total += parseFloat(inp.value) || 0; });
-  document.getElementById("repayment-total").textContent = "$" + total.toFixed(2);
-}
+function exportData() {
+  var acct = document.getElementById('export-account').value;
+  var txs = getExportTxs(acct, exportRange);
+  if (!txs.length) { setStatus('No transactions to export', 'err'); return; }
 
-function renderRepaymentAmounts() {
-  var el = document.getElementById("repayment-amounts-list");
-  el.innerHTML = repaymentAmounts.map(function(a) {
-    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">' +
-      '<input class="note-input repayment-amt-input" type="number" placeholder="0.00" min="0" step="0.01" ' +
-      'value="' + (a.value || "") + '" ' +
-      'oninput="updateRepaymentTotal()" ' +
-      'style="flex:1;font-size:16px;font-weight:600;text-align:center">' +
-      (repaymentAmounts.length > 1
-        ? '<button onclick="removeRepaymentAmount(' + a.id + ')" style="width:36px;height:36px;background:none;border:1px solid rgba(224,85,85,0.3);border-radius:8px;color:var(--red);font-size:18px;cursor:pointer;flex-shrink:0;line-height:1">×</button>'
-        : '') +
-      '</div>';
-  }).join("");
-}
-
-function saveRepayment() {
-  var sourceAcct = document.getElementById("repayment-source").value;
-  var date = document.getElementById("repayment-date").value || new Date().toISOString().slice(0,10);
-  var inputs = document.querySelectorAll(".repayment-amt-input");
-  var amounts = [];
-  inputs.forEach(function(inp) {
-    var v = parseFloat(inp.value);
-    if (v > 0) amounts.push(v);
+  // Build account balances
+  var accts = acct === 'all' ? S.accounts : [acct];
+  var balances = {};
+  accts.forEach(function(a) {
+    balances[a] = {
+      startBalance: (S.startBalances || {})[a] || 0,
+      creditLimit: (S.creditLimits || {})[a] || null,
+      currentBalance: acctBalance(a)
+    };
   });
 
-  if (!amounts.length) { alert("Please enter at least one amount"); return; }
-  if (!sourceAcct) { alert("Please select a source account"); return; }
-
-  var newTxs = [];
-  var ts = Date.now();
-  amounts.forEach(function(amt, i) {
-    var debtDesc = repaymentDebtAccount + " Repayment";
-    var sourceDesc = "Repayment from " + sourceAcct;
-
-    // Debit on source account (money leaving)
-    newTxs.push({
-      id: "rep-src-" + ts + "-" + i,
-      description: debtDesc,
-      amount: amt,
-      date: date,
-      type: "debit",
-      category: "transfers",
-      account: sourceAcct,
-      linkedAccount: repaymentDebtAccount
-    });
-
-    // Credit on debt account (debt reducing)
-    newTxs.push({
-      id: "rep-dbt-" + ts + "-" + i,
-      description: sourceDesc,
-      amount: amt,
-      date: date,
-      type: "credit",
-      category: "transfers",
-      account: repaymentDebtAccount,
-      linkedAccount: sourceAcct
-    });
+  // Filter instalments
+  var instalments = (S.instalments || []).filter(function(i) {
+    if (acct === 'all') return true;
+    return false; // instalments aren't account-specific, only include on all
   });
 
-  S.txs = S.txs.concat(newTxs);
-  save(); render();
+  var payload = {
+    exportDate: new Date().toISOString(),
+    exportScope: { account: acct, range: exportRange },
+    accounts: balances,
+    transactions: txs,
+    instalments: acct === 'all' ? (S.instalments || []) : [],
+    budget: acct === 'all' ? (S.budget || []) : [],
+    categories: S.cats
+  };
 
-  var total = amounts.reduce(function(s,a) { return s+a; }, 0);
-  closeRepaymentModal();
-  setStatus("Recorded " + amounts.length + " repayment" + (amounts.length !== 1 ? "s" : "") + " totalling $" + total.toFixed(2), "ok");
+  var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var dateStr = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = 'ledger-export-' + (acct === 'all' ? 'all' : acct.replace(/\s+/g,'-')) + '-' + dateStr + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  setStatus('Exported ' + txs.length + ' transactions', 'ok');
+}
+
+function initExportUI() {
+  var sel = document.getElementById('export-account');
+  if (!sel) return;
+  var allAccts = S.accounts.concat((S.manualAccts||[]).map(function(a){return a.name;}));
+  sel.innerHTML = '<option value="all">All accounts</option>' +
+    allAccts.map(function(a) { return '<option value="' + a + '">' + a + '</option>'; }).join('');
+  sel.onchange = updateExportSummary;
+  updateExportSummary();
+  var fromEl = document.getElementById('export-from');
+  var toEl = document.getElementById('export-to');
+  if (fromEl) fromEl.oninput = updateExportSummary;
+  if (toEl) toEl.oninput = updateExportSummary;
 }
 
 
