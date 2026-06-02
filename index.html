@@ -990,8 +990,12 @@ function exJSON(text) {
   try { return JSON.parse(text); } catch(e) {}
   var s = text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
   try { return JSON.parse(s); } catch(e) {}
-  var st = text.indexOf("{"), en = text.lastIndexOf("}");
-  if (st !== -1 && en > st) { try { return JSON.parse(text.slice(st, en+1)); } catch(e) {} }
+  // Try array first
+  var as = s.indexOf("["), ae = s.lastIndexOf("]");
+  if (as !== -1 && ae > as) { try { return JSON.parse(s.slice(as, ae+1)); } catch(e) {} }
+  // Then object
+  var st = s.indexOf("{"), en = s.lastIndexOf("}");
+  if (st !== -1 && en > st) { try { return JSON.parse(s.slice(st, en+1)); } catch(e) {} }
   return null;
 }
 
@@ -1230,6 +1234,18 @@ function saveCreditLimit(account) {
   setStatus("Credit limit updated for " + account, "ok");
 }
 
+function deleteAccount(acct) {
+  var txCount = S.txs.filter(function(t) { return t.account === acct; }).length;
+  if (!confirm('Delete "' + acct + '" and all ' + txCount + ' transactions? This cannot be undone.')) return;
+  S.txs = S.txs.filter(function(t) { return t.account !== acct; });
+  S.accounts = S.accounts.filter(function(a) { return a !== acct; });
+  delete (S.startBalances || {})[acct];
+  delete (S.creditLimits || {})[acct];
+  save(); render();
+  setStatus('Deleted "' + acct + '" and ' + txCount + ' transactions', 'ok');
+}
+
+
 function saveStartBal(account) {
   var safeId = account.replace(/\s/g, "_");
   var val = parseFloat(document.getElementById("sb-" + safeId).value);
@@ -1382,8 +1398,10 @@ function render() {
           })() +
           '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div>' +
           (isDebt ? '<div class="bal-set-row"><span class="bal-set-label">Credit limit</span><input class="bal-input" type="number" id="cl-sb-' + a.replace(/\s/g,"_") + '" value="' + (creditLimit || "").toString() + '" step="0.01" placeholder="e.g. 3000"><button class="bal-save-btn" data-acct="' + a.replace(/'/g,"\\'") + '" onclick="saveCreditLimit(this.getAttribute(\'data-acct\'))">Update</button></div>' : '') +
-          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px">' +
-          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
+          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px;display:flex;flex-direction:column;gap:8px">' +
+          (isDebt ? '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openRepaymentModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:linear-gradient(135deg,var(--green),#2d9e52);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">💸 Record repayment</button>' : '') +
+          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
+          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="deleteAccount(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:none;border:1px solid rgba(224,85,85,0.3);border-radius:8px;font-size:13px;color:var(--red);cursor:pointer;font-family:inherit">🗑 Delete account</button>' +
           '</div>' +
           '</div>' +
           '</div>';
