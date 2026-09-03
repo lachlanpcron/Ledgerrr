@@ -548,37 +548,6 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         </div>
         <div id="cat-list"></div>
       </div>
-      <div class="card" style="margin-bottom:14px">
-        <div class="card-label">Export data</div>
-        <div style="margin-bottom:12px">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Account</div>
-          <select class="note-input" id="export-account" style="width:100%;cursor:pointer">
-            <option value="all">All accounts</option>
-          </select>
-        </div>
-        <div style="margin-bottom:12px">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Date range</div>
-          <div style="display:flex;gap:8px">
-            <button id="export-range-all" onclick="setExportRange('all')" style="flex:1;padding:9px 6px;border-radius:9px;border:2px solid var(--accent);background:rgba(124,106,247,0.1);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">All data</button>
-            <button id="export-range-month" onclick="setExportRange('month')" style="flex:1;padding:9px 6px;border-radius:9px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">This month</button>
-            <button id="export-range-custom" onclick="setExportRange('custom')" style="flex:1;padding:9px 6px;border-radius:9px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Custom</button>
-          </div>
-          <div id="export-custom-dates" style="display:none;margin-top:10px;display:none">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              <div>
-                <div style="font-size:11px;color:var(--muted);margin-bottom:4px">From</div>
-                <input class="note-input" type="date" id="export-from" style="width:100%">
-              </div>
-              <div>
-                <div style="font-size:11px;color:var(--muted);margin-bottom:4px">To</div>
-                <input class="note-input" type="date" id="export-to" style="width:100%">
-              </div>
-            </div>
-          </div>
-        </div>
-        <div id="export-summary" style="font-size:12px;color:var(--muted);margin-bottom:12px;min-height:18px"></div>
-        <button onclick="exportData()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">⬇️ Download export</button>
-      </div>
       <div class="card">
         <div class="card-label">Data</div>
         <button class="danger-btn" onclick="resetData()">Reset all data</button>
@@ -990,12 +959,8 @@ function exJSON(text) {
   try { return JSON.parse(text); } catch(e) {}
   var s = text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
   try { return JSON.parse(s); } catch(e) {}
-  // Try array first
-  var as = s.indexOf("["), ae = s.lastIndexOf("]");
-  if (as !== -1 && ae > as) { try { return JSON.parse(s.slice(as, ae+1)); } catch(e) {} }
-  // Then object
-  var st = s.indexOf("{"), en = s.lastIndexOf("}");
-  if (st !== -1 && en > st) { try { return JSON.parse(s.slice(st, en+1)); } catch(e) {} }
+  var st = text.indexOf("{"), en = text.lastIndexOf("}");
+  if (st !== -1 && en > st) { try { return JSON.parse(text.slice(st, en+1)); } catch(e) {} }
   return null;
 }
 
@@ -1234,18 +1199,6 @@ function saveCreditLimit(account) {
   setStatus("Credit limit updated for " + account, "ok");
 }
 
-function deleteAccount(acct) {
-  var txCount = S.txs.filter(function(t) { return t.account === acct; }).length;
-  if (!confirm('Delete "' + acct + '" and all ' + txCount + ' transactions? This cannot be undone.')) return;
-  S.txs = S.txs.filter(function(t) { return t.account !== acct; });
-  S.accounts = S.accounts.filter(function(a) { return a !== acct; });
-  delete (S.startBalances || {})[acct];
-  delete (S.creditLimits || {})[acct];
-  save(); render();
-  setStatus('Deleted "' + acct + '" and ' + txCount + ' transactions', 'ok');
-}
-
-
 function saveStartBal(account) {
   var safeId = account.replace(/\s/g, "_");
   var val = parseFloat(document.getElementById("sb-" + safeId).value);
@@ -1398,10 +1351,8 @@ function render() {
           })() +
           '<div class="bal-set-row"><span class="bal-set-label">Starting balance</span><input class="bal-input" type="number" id="' + sbId + '" value="' + sbVal + '" step="0.01"><button class="bal-save-btn" onclick="saveStartBal(\'' + a.replace(/'/g,"\\'") + '\')">Update</button></div>' +
           (isDebt ? '<div class="bal-set-row"><span class="bal-set-label">Credit limit</span><input class="bal-input" type="number" id="cl-sb-' + a.replace(/\s/g,"_") + '" value="' + (creditLimit || "").toString() + '" step="0.01" placeholder="e.g. 3000"><button class="bal-save-btn" data-acct="' + a.replace(/'/g,"\\'") + '" onclick="saveCreditLimit(this.getAttribute(\'data-acct\'))">Update</button></div>' : '') +
-          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px;display:flex;flex-direction:column;gap:8px">' +
-          (isDebt ? '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openRepaymentModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:linear-gradient(135deg,var(--green),#2d9e52);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">💸 Record repayment</button>' : '') +
-          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
-          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="deleteAccount(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:none;border:1px solid rgba(224,85,85,0.3);border-radius:8px;font-size:13px;color:var(--red);cursor:pointer;font-family:inherit">🗑 Delete account</button>' +
+          '<div style="padding-top:10px;border-top:1px solid var(--border);margin-top:4px">' +
+          '<button data-acct="' + a.replace(/'/g,"\\'") + '" onclick="openManualTxModal(this.getAttribute(\'data-acct\'))" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">+ Add transaction</button>' +
           '</div>' +
           '</div>' +
           '</div>';
@@ -1634,7 +1585,6 @@ function sw(name, btn) {
   if (name === "budget") renderBudget();
   if (name === "goals") renderGoals();
   if (name === "calendar") renderCalendar();
-  if (name === "settings") initExportUI();
 }
 function selMonth(m) { S.month = m; S.view = "month"; render(); }
 function selWeek(w) { S.week = w; S.view = "week"; render(); }
@@ -2837,107 +2787,7 @@ function saveManualTx() {
   setStatus((manualTxType === "credit" ? "+" : "-") + "$" + amount.toFixed(2) + " added to " + manualTxAccount, "ok");
 }
 
-// ── EXPORT ───────────────────────────────────────────────────────
-var exportRange = 'all';
-
-function setExportRange(range) {
-  exportRange = range;
-  ['all','month','custom'].forEach(function(r) {
-    var btn = document.getElementById('export-range-' + r);
-    if (!btn) return;
-    btn.style.border = r === range ? '2px solid var(--accent)' : '1px solid var(--border)';
-    btn.style.background = r === range ? 'rgba(124,106,247,0.1)' : 'none';
-    btn.style.color = r === range ? 'var(--text)' : 'var(--muted)';
-  });
-  var customDates = document.getElementById('export-custom-dates');
-  if (customDates) customDates.style.display = range === 'custom' ? 'block' : 'none';
-  updateExportSummary();
-}
-
-function updateExportSummary() {
-  var acct = document.getElementById('export-account');
-  var summary = document.getElementById('export-summary');
-  if (!acct || !summary) return;
-  var txs = getExportTxs(acct.value, exportRange);
-  summary.textContent = txs.length + ' transaction' + (txs.length !== 1 ? 's' : '') + ' selected';
-}
-
-function getExportTxs(account, range) {
-  var txs = S.txs.slice();
-  if (account !== 'all') txs = txs.filter(function(t) { return t.account === account; });
-  var today = new Date().toISOString().slice(0,10);
-  if (range === 'month') {
-    var cm = curMonth();
-    txs = txs.filter(function(t) { return mkey(t.date) === cm; });
-  } else if (range === 'custom') {
-    var from = document.getElementById('export-from').value;
-    var to = document.getElementById('export-to').value;
-    if (from) txs = txs.filter(function(t) { return t.date >= from; });
-    if (to) txs = txs.filter(function(t) { return t.date <= to; });
-  }
-  return txs.sort(function(a,b) { return new Date(b.date) - new Date(a.date); });
-}
-
-function exportData() {
-  var acct = document.getElementById('export-account').value;
-  var txs = getExportTxs(acct, exportRange);
-  if (!txs.length) { setStatus('No transactions to export', 'err'); return; }
-
-  // Build account balances
-  var accts = acct === 'all' ? S.accounts : [acct];
-  var balances = {};
-  accts.forEach(function(a) {
-    balances[a] = {
-      startBalance: (S.startBalances || {})[a] || 0,
-      creditLimit: (S.creditLimits || {})[a] || null,
-      currentBalance: acctBalance(a)
-    };
-  });
-
-  // Filter instalments
-  var instalments = (S.instalments || []).filter(function(i) {
-    if (acct === 'all') return true;
-    return false; // instalments aren't account-specific, only include on all
-  });
-
-  var payload = {
-    exportDate: new Date().toISOString(),
-    exportScope: { account: acct, range: exportRange },
-    accounts: balances,
-    transactions: txs,
-    instalments: acct === 'all' ? (S.instalments || []) : [],
-    budget: acct === 'all' ? (S.budget || []) : [],
-    categories: S.cats
-  };
-
-  var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  var dateStr = new Date().toISOString().slice(0,10);
-  a.href = url;
-  a.download = 'ledger-export-' + (acct === 'all' ? 'all' : acct.replace(/\s+/g,'-')) + '-' + dateStr + '.json';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  setStatus('Exported ' + txs.length + ' transactions', 'ok');
-}
-
-function initExportUI() {
-  var sel = document.getElementById('export-account');
-  if (!sel) return;
-  var allAccts = S.accounts.concat((S.manualAccts||[]).map(function(a){return a.name;}));
-  sel.innerHTML = '<option value="all">All accounts</option>' +
-    allAccts.map(function(a) { return '<option value="' + a + '">' + a + '</option>'; }).join('');
-  sel.onchange = updateExportSummary;
-  updateExportSummary();
-  var fromEl = document.getElementById('export-from');
-  var toEl = document.getElementById('export-to');
-  if (fromEl) fromEl.oninput = updateExportSummary;
-  if (toEl) toEl.oninput = updateExportSummary;
-}
-
-
+// ── WEEKLY TRACKER ───────────────────────────────────────────────
 function loadWeeklyTargets() {
   try { var w = localStorage.getItem("ldg-wtargets"); if (w) return JSON.parse(w); } catch(e) {}
   // Default targets based on known bills
@@ -3250,30 +3100,49 @@ function toggleBudgetEdit() {
   if (editEl) editEl.style.display = S.budgetEditing ? "block" : "none";
 }
 
+function toggleBudgetSection(idx) {
+  S.budgetCollapsed = S.budgetCollapsed || {};
+  S.budgetCollapsed[idx] = !S.budgetCollapsed[idx];
+  renderBudgetViewMode();
+}
+
 function renderBudgetViewMode() {
   var el = document.getElementById("budget-view-mode");
   if (!el) return;
-  var html = S.budget.map(function(sec) {
+  S.budgetCollapsed = S.budgetCollapsed || {};
+  var html = S.budget.map(function(sec, idx) {
     var isIncome = sec.name === "Income";
+    var collapsed = !!S.budgetCollapsed[idx];
+    var secMonthly = sectionMonthly(sec);
+    var secWeekly = secMonthly / 4.33;
     return '<div class="card" style="margin-bottom:12px">' +
-      '<div class="card-label" style="margin-bottom:10px">' + sec.name + '</div>' +
-      sec.items.map(function(item) {
-        var monthly = itemMonthly(item);
-        var weekly = monthly / 4.33;
-        var amtStr = item.incomeLinked
-          ? (item.incomePct + "% of income = $" + monthly.toFixed(0) + "/mo")
-          : item.isPct
-          ? (item.amount + "% = $" + monthly.toFixed(0) + "/mo")
-          : "$" + monthly.toFixed(0) + "/mo · $" + weekly.toFixed(0) + "/wk";
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
-          '<span style="font-size:13px">' + item.name + '</span>' +
-          '<span style="font-size:12px;color:var(--muted)">' + amtStr + '</span>' +
-          '</div>';
-      }).join("") +
-      '<div style="display:flex;justify-content:space-between;padding-top:10px;margin-top:2px">' +
-      '<span style="font-size:11px;color:var(--muted)">Total</span>' +
-      '<span style="font-size:12px;font-weight:600;color:' + (isIncome ? "var(--green)" : "var(--text)") + '">$' + sectionMonthly(sec).toFixed(0) + '/mo · $' + (sectionMonthly(sec)/4.33).toFixed(0) + '/wk</span>' +
-      '</div></div>';
+      '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:' + (collapsed ? '0' : '10px') + '" onclick="toggleBudgetSection(' + idx + ')">' +
+        '<div class="card-label" style="margin-bottom:0">' + sec.name + '</div>' +
+        '<div style="display:flex;align-items:center;gap:10px">' +
+          (collapsed ? '<span style="font-size:12px;font-weight:600;color:' + (isIncome ? 'var(--green)' : 'var(--muted)') + '">$' + secMonthly.toFixed(0) + '/mo · $' + secWeekly.toFixed(0) + '/wk</span>' : '') +
+          '<span style="font-size:14px;color:var(--muted);transition:transform 0.2s;display:inline-block;transform:' + (collapsed ? '' : 'rotate(180deg)') + '">▾</span>' +
+        '</div>' +
+      '</div>' +
+      (collapsed ? '' :
+        sec.items.map(function(item) {
+          var monthly = itemMonthly(item);
+          var weekly = monthly / 4.33;
+          var amtStr = item.incomeLinked
+            ? (item.incomePct + "% of income = $" + monthly.toFixed(0) + "/mo")
+            : item.isPct
+            ? (item.amount + "% = $" + monthly.toFixed(0) + "/mo")
+            : "$" + monthly.toFixed(0) + "/mo · $" + weekly.toFixed(0) + "/wk";
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
+            '<span style="font-size:13px">' + item.name + '</span>' +
+            '<span style="font-size:12px;color:var(--muted)">' + amtStr + '</span>' +
+            '</div>';
+        }).join("") +
+        '<div style="display:flex;justify-content:space-between;padding-top:10px;margin-top:2px">' +
+          '<span style="font-size:11px;color:var(--muted)">Total</span>' +
+          '<span style="font-size:12px;font-weight:600;color:' + (isIncome ? "var(--green)" : "var(--text)") + '">$' + secMonthly.toFixed(0) + '/mo · $' + secWeekly.toFixed(0) + '/wk</span>' +
+        '</div>'
+      ) +
+      '</div>';
   }).join("");
   el.innerHTML = html;
 }
@@ -3300,7 +3169,6 @@ function swDrop(name, label) {
   if (name === "budget") renderBudget();
   if (name === "goals") renderGoals();
   if (name === "calendar") renderCalendar();
-  if (name === "settings") initExportUI();
 }
 
 function toggleTxDay(date) {
