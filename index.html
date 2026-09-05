@@ -406,34 +406,16 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         </div>
       </div>
       <div id="recurring-alerts" style="margin-bottom:14px"></div>
-      <div class="card" style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleWeeklyTracker()">
-          <div>
-            <div class="card-label" style="margin-bottom:2px">Budget tracker</div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <div id="weekly-tracker-dates" style="font-size:11px;color:var(--muted)"></div>
-              <div id="weekly-tracker-summary" style="font-size:11px;color:var(--accent);font-weight:500"></div>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button onclick="event.stopPropagation();openWeekHistory()" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-family:inherit">History</button>
-            <button onclick="event.stopPropagation();openWeeklySettingsModal()" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-family:inherit">⚙ Targets</button>
-            <span id="weekly-tracker-chevron" style="font-size:16px;color:var(--muted);transition:transform 0.2s">▾</span>
-          </div>
-        </div>
-        <div id="weekly-tracker-body" style="margin-top:12px"><div class="empty" style="padding:16px 0">No transactions this week yet</div></div>
+
+      <!-- Customisable widgets -->
+      <div id="dash-widgets"></div>
+
+      <!-- Customise button -->
+      <div style="text-align:center;margin-bottom:14px">
+        <button onclick="openDashCustomise()" style="padding:8px 20px;background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit">⚙ Customise dashboard</button>
       </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:14px" onclick="togglePieDetails()">
-          <div class="card-label" style="margin-bottom:0">Spending breakdown</div>
-          <span id="pie-chevron" style="font-size:16px;color:var(--muted);transition:transform 0.2s">▾</span>
-        </div>
-        <div id="d-pie"><div class="empty">Add transaction data to see your breakdown</div></div>
-      </div>
-      <div class="card" id="upcoming-card" style="display:none">
-        <div class="card-label">Upcoming payments</div>
-        <div id="upcoming-list"></div>
-      </div>
+
+      <!-- Add Data card -->
       <div class="card" style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleDashAdd()">
           <div class="card-label" style="margin-bottom:0">+ Add Data</div>
@@ -450,6 +432,22 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
             </div>
           </div>
           <button class="import-btn" onclick="importDataFrom('dash')" style="margin-top:10px">Import transactions</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Customise Dashboard Modal -->
+    <div class="modal-overlay" id="dash-customise-overlay" onclick="if(event.target===this)closeDashCustomise()">
+      <div class="modal">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+          <div class="modal-title">⚙ Customise Dashboard</div>
+          <button class="modal-close" onclick="closeDashCustomise()">×</button>
+        </div>
+        <div class="modal-body" style="padding-top:14px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Choose which widgets appear on your dashboard. Tap any widget to go to that tab.</div>
+          <div id="dash-widget-checklist"></div>
+          <button onclick="closeDashCustomise()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:16px">Done</button>
         </div>
       </div>
     </div>
@@ -1597,6 +1595,7 @@ function render() {
   renderSpendingAlerts();
   renderRecurringAlerts();
   renderWeeklyTracker();
+  renderDashWidgets();
 }
 
 function sw(name, btn) {
@@ -3121,6 +3120,195 @@ function toggleBudgetEdit() {
   if (viewEl) viewEl.style.display = S.budgetEditing ? "none" : "block";
   if (editEl) editEl.style.display = S.budgetEditing ? "block" : "none";
 }
+
+// ── DASHBOARD WIDGETS ─────────────────────────────────────────────
+var WIDGETS = [
+  { id: 'budget-tracker', label: 'Budget tracker', tab: 'budget', icon: '📊' },
+  { id: 'spending-breakdown', label: 'Spending breakdown', tab: 'cashflow', icon: '🥧' },
+  { id: 'accounts', label: 'Accounts', tab: 'accounts', icon: '🏦' },
+  { id: 'instalments', label: 'Instalments', tab: null, icon: '💳' },
+  { id: 'upcoming', label: 'Upcoming payments', tab: null, icon: '📅' },
+  { id: 'cashflow', label: 'Cash flow', tab: 'cashflow', icon: '💸' },
+  { id: 'recent-txs', label: 'Recent transactions', tab: 'txs', icon: '🧾' },
+];
+
+function getWidgetPrefs() {
+  if (!S.dashWidgets) S.dashWidgets = { order: WIDGETS.map(function(w){return w.id;}), hidden: [] };
+  return S.dashWidgets;
+}
+
+function isWidgetVisible(id) {
+  return getWidgetPrefs().hidden.indexOf(id) === -1;
+}
+
+function toggleWidget(id) {
+  var prefs = getWidgetPrefs();
+  var idx = prefs.hidden.indexOf(id);
+  if (idx === -1) prefs.hidden.push(id);
+  else prefs.hidden.splice(idx, 1);
+  S.dashWidgets = prefs;
+  save();
+  renderDashWidgets();
+  renderDashCustomiseList();
+}
+
+function openDashCustomise() {
+  renderDashCustomiseList();
+  document.getElementById('dash-customise-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDashCustomise() {
+  document.getElementById('dash-customise-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function renderDashCustomiseList() {
+  var el = document.getElementById('dash-widget-checklist');
+  if (!el) return;
+  el.innerHTML = WIDGETS.map(function(w) {
+    var on = isWidgetVisible(w.id);
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+        '<span style="font-size:20px">' + w.icon + '</span>' +
+        '<span style="font-size:14px">' + w.label + '</span>' +
+      '</div>' +
+      '<div onclick="toggleWidget(\'' + w.id + '\')" style="width:44px;height:26px;border-radius:13px;background:' + (on ? 'var(--accent)' : 'var(--border)') + ';position:relative;cursor:pointer;transition:background 0.2s">' +
+        '<div style="position:absolute;top:3px;' + (on ? 'right:3px' : 'left:3px') + ';width:20px;height:20px;border-radius:50%;background:#fff;transition:all 0.2s"></div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderDashWidgets() {
+  var el = document.getElementById('dash-widgets');
+  if (!el) return;
+  var prefs = getWidgetPrefs();
+  var html = '';
+
+  prefs.order.forEach(function(id) {
+    if (!isWidgetVisible(id)) return;
+    var w = WIDGETS.filter(function(x){return x.id===id;})[0];
+    if (!w) return;
+
+    var nav = w.tab ? 'swDrop(\'' + w.tab + '\',\'' + capitalise(w.tab) + '\')' : '';
+    var tapStyle = w.tab ? 'cursor:pointer' : '';
+
+    if (id === 'budget-tracker') {
+      html += '<div class="card" style="margin-bottom:14px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleWeeklyTracker()">' +
+          '<div>' +
+            '<div class="card-label" style="margin-bottom:2px">Budget tracker</div>' +
+            '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+              '<div id="weekly-tracker-dates" style="font-size:11px;color:var(--muted)"></div>' +
+              '<div id="weekly-tracker-summary" style="font-size:11px;color:var(--accent);font-weight:500"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<button onclick="event.stopPropagation();openWeekHistory()" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-family:inherit">History</button>' +
+            '<button onclick="event.stopPropagation();openWeeklySettingsModal()" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;font-family:inherit">⚙ Targets</button>' +
+            '<span id="weekly-tracker-chevron" style="font-size:16px;color:var(--muted);transition:transform 0.2s">▾</span>' +
+          '</div>' +
+        '</div>' +
+        '<div id="weekly-tracker-body" style="margin-top:12px"><div class="empty" style="padding:16px 0">No transactions this week yet</div></div>' +
+      '</div>';
+
+    } else if (id === 'spending-breakdown') {
+      html += '<div class="card" style="margin-bottom:14px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:14px" onclick="togglePieDetails()">' +
+          '<div class="card-label" style="margin-bottom:0">Spending breakdown</div>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            (w.tab ? '<span onclick="event.stopPropagation();' + nav + '" style="font-size:10px;color:var(--muted);cursor:pointer">Open ↗</span>' : '') +
+            '<span id="pie-chevron" style="font-size:16px;color:var(--muted);transition:transform 0.2s">▾</span>' +
+          '</div>' +
+        '</div>' +
+        '<div id="d-pie"><div class="empty">Add transaction data to see your breakdown</div></div>' +
+      '</div>';
+
+    } else if (id === 'accounts') {
+      var accts = S.accounts || [];
+      var acctSummary = accts.slice(0,3).map(function(a) {
+        var bal = acctBalance(a);
+        return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0">' +
+          '<span>' + a + '</span>' +
+          '<span style="font-weight:500;color:' + (bal < 0 ? 'var(--red)' : 'var(--green)') + '">' + fmt(bal) + '</span>' +
+        '</div>';
+      }).join('');
+      if (accts.length > 3) acctSummary += '<div style="font-size:11px;color:var(--muted);padding-top:4px">+' + (accts.length-3) + ' more…</div>';
+      html += '<div class="card" style="margin-bottom:14px;' + tapStyle + '" onclick="' + nav + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+          '<div class="card-label" style="margin-bottom:0">' + w.icon + ' Accounts</div>' +
+          (w.tab ? '<span style="font-size:10px;color:var(--muted)">Open ↗</span>' : '') +
+        '</div>' +
+        (acctSummary || '<div class="empty">No accounts yet</div>') +
+      '</div>';
+
+    } else if (id === 'instalments') {
+      var insts = [];
+      try { insts = (getInstalments() || []).filter(function(i){ return i.payments && i.payments.some(function(p){return !p.paid;}); }); } catch(e) {}
+      var instHtml = insts.slice(0,3).map(function(i) {
+        var next = i.payments.filter(function(p){return !p.paid;})[0];
+        return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0">' +
+          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + i.description + '</span>' +
+          '<span style="color:var(--muted);margin-left:8px;flex-shrink:0">' + (next ? next.date + ' · $' + next.amount.toFixed(2) : '') + '</span>' +
+        '</div>';
+      }).join('');
+      html += '<div class="card" style="margin-bottom:14px">' +
+        '<div class="card-label" style="margin-bottom:10px">' + w.icon + ' Instalments</div>' +
+        (instHtml || '<div class="empty">No active plans</div>') +
+      '</div>';
+
+    } else if (id === 'upcoming') {
+      html += '<div class="card" id="upcoming-card" style="margin-bottom:14px;display:none">' +
+        '<div class="card-label">📅 Upcoming payments</div>' +
+        '<div id="upcoming-list"></div>' +
+      '</div>';
+
+    } else if (id === 'cashflow') {
+      var allT = (S.txs || []).filter(function(t){ return mkey(t.date) === curMonth(); });
+      var inc = allT.filter(function(t){return t.type==='credit';}).reduce(function(s,t){return s+t.amount;},0);
+      var exp = allT.filter(function(t){return t.type==='debit';}).reduce(function(s,t){return s+t.amount;},0);
+      var net = inc - exp;
+      html += '<div class="card" style="margin-bottom:14px;' + tapStyle + '" onclick="' + nav + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+          '<div class="card-label" style="margin-bottom:0">' + w.icon + ' Cash flow</div>' +
+          (w.tab ? '<span style="font-size:10px;color:var(--muted)">Open ↗</span>' : '') +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">' +
+          '<div><div style="font-size:11px;color:var(--muted)">Income</div><div style="font-size:14px;font-weight:600;color:var(--green)">' + fmt(inc) + '</div></div>' +
+          '<div><div style="font-size:11px;color:var(--muted)">Spent</div><div style="font-size:14px;font-weight:600;color:var(--red)">' + fmt(exp) + '</div></div>' +
+          '<div><div style="font-size:11px;color:var(--muted)">Net</div><div style="font-size:14px;font-weight:600;color:' + (net>=0?'var(--green)':'var(--red)') + '">' + fmt(net) + '</div></div>' +
+        '</div>' +
+      '</div>';
+
+    } else if (id === 'recent-txs') {
+      var recent = (S.txs || []).slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,5);
+      var txHtml = recent.map(function(t) {
+        return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border)">' +
+          '<div style="overflow:hidden;flex:1">' +
+            '<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + t.description + '</div>' +
+            '<div style="font-size:11px;color:var(--muted)">' + t.date + ' · ' + t.account + '</div>' +
+          '</div>' +
+          '<div style="font-weight:500;color:' + (t.type==='credit'?'var(--green)':'var(--text)') + ';margin-left:8px;flex-shrink:0">' + (t.type==='credit'?'+':'-') + '$' + t.amount.toFixed(2) + '</div>' +
+        '</div>';
+      }).join('');
+      html += '<div class="card" style="margin-bottom:14px;' + tapStyle + '" onclick="' + nav + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+          '<div class="card-label" style="margin-bottom:0">' + w.icon + ' Recent transactions</div>' +
+          (w.tab ? '<span style="font-size:10px;color:var(--muted)">Open ↗</span>' : '') +
+        '</div>' +
+        (txHtml || '<div class="empty">No transactions yet</div>') +
+      '</div>';
+    }
+  });
+
+  el.innerHTML = html;
+  // Re-run weekly tracker to populate its newly rendered elements
+  try { renderWeeklyTracker(); } catch(e) {}
+}
+
+function capitalise(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
 
 function toggleDashAdd() {
   var body = document.getElementById("dash-add-body");
