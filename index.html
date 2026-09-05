@@ -434,6 +434,24 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <div class="card-label">Upcoming payments</div>
         <div id="upcoming-list"></div>
       </div>
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleDashAdd()">
+          <div class="card-label" style="margin-bottom:0">+ Add Data</div>
+          <span id="dash-add-chevron" style="font-size:16px;color:var(--muted);transition:transform 0.2s">▾</span>
+        </div>
+        <div id="dash-add-body" style="display:none;margin-top:12px">
+          <textarea class="paste-area" id="paste-input-dash" placeholder='{"account":"CommBank Complete Access","transactions":[]}'></textarea>
+          <div id="dedup-review-card-dash" style="display:none;margin-top:10px">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Possible duplicates — check any to import anyway:</div>
+            <div id="dedup-list-dash"></div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button onclick="confirmImportFrom('dash')" style="flex:1;padding:9px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit">Import selected</button>
+              <button onclick="cancelImport()" style="flex:1;padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit">Skip all</button>
+            </div>
+          </div>
+          <button class="import-btn" onclick="importDataFrom('dash')" style="margin-top:10px">Import transactions</button>
+        </div>
+      </div>
     </div>
 
     <div id="tab-calendar" style="display:none">
@@ -3103,6 +3121,15 @@ function toggleBudgetEdit() {
   if (viewEl) viewEl.style.display = S.budgetEditing ? "none" : "block";
   if (editEl) editEl.style.display = S.budgetEditing ? "block" : "none";
 }
+
+function toggleDashAdd() {
+  var body = document.getElementById("dash-add-body");
+  var chev = document.getElementById("dash-add-chevron");
+  var open = body.style.display !== "none";
+  body.style.display = open ? "none" : "block";
+  chev.style.transform = open ? "" : "rotate(180deg)";
+}
+
 
 function toggleBudgetSection(idx) {
   S.budgetCollapsed = S.budgetCollapsed || {};
