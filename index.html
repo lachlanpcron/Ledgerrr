@@ -821,19 +821,19 @@ var PRESETS = [
   {id:"uncategorised",label:"Uncategorised",color:"#555570"}
 ];
 var DEFAULT_START_BAL = {
-  "CommBank Complete Access": 382.34,
-  "StepPay": -182.25,
-  "CommBank Mastercard": -2985.52,
-  "CommBank Bills": 400.00,
-  "CommBank GoalSaver": 0.33,
-  "CommBank Savings": 125.16
+  "CommBank Complete Access": 103.74,
+  "StepPay": -247.90,
+  "CommBank Mastercard": -2919.87,
+  "CommBank Bills": 330.23,
+  "CommBank GoalSaver": 0.34,
+  "CommBank Savings": 30.36
 };
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-var START_DATE = "2026-04-29";
+var START_DATE = "2026-09-06";
 
 var S = {
-  txs: [], accounts: [], cats: JSON.parse(JSON.stringify(PRESETS)),
+  txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
   month: null, week: null, acctFilter: "all", catFilter: "all", view: "month",
   startBalances: JSON.parse(JSON.stringify(DEFAULT_START_BAL)),
   creditLimits: {},
@@ -896,16 +896,19 @@ function save() {
 
 function resetData() {
   if (confirm("Delete ALL transaction data? This cannot be undone.")) {
-    S.txs = []; S.accounts = [];
+    S.txs = []; S.accounts = Object.keys(DEFAULT_START_BAL);
     S.cats = JSON.parse(JSON.stringify(PRESETS));
     S.startBalances = JSON.parse(JSON.stringify(DEFAULT_START_BAL));
+    S.instalments = [];
     S.month = null; S.week = null; S.acctFilter = "all";
     localStorage.removeItem("ldg-tx");
     localStorage.removeItem("ldg-ac");
     localStorage.removeItem("ldg-ct");
     localStorage.removeItem("ldg-sb");
+    localStorage.removeItem("ldg-inst");
+    save();
     render();
-    setStatus("All data has been reset", "ok");
+    setStatus("All data has been reset — 6 accounts ready from today's balances", "ok");
   }
 }
 
