@@ -861,6 +861,10 @@ function loadData() {
     }
     var cl = localStorage.getItem("ldg-cl");
     if (cl) S.creditLimits = JSON.parse(cl);
+    var dw = localStorage.getItem("ldg-dw");
+    if (dw) S.dashWidgets = JSON.parse(dw);
+    var inst = localStorage.getItem("ldg-inst");
+    if (inst) S.instalments = JSON.parse(inst);
   } catch(e) {}
   S.budget = loadBudget();
   S.goals = loadGoals();
@@ -885,6 +889,8 @@ function save() {
     localStorage.setItem("ldg-ct", JSON.stringify(S.cats));
     localStorage.setItem("ldg-sb", JSON.stringify(S.startBalances));
     localStorage.setItem("ldg-cl", JSON.stringify(S.creditLimits));
+    if (S.dashWidgets) localStorage.setItem("ldg-dw", JSON.stringify(S.dashWidgets));
+    if (S.instalments) localStorage.setItem("ldg-inst", JSON.stringify(S.instalments));
   } catch(e) {}
 }
 
@@ -1182,32 +1188,149 @@ function buildPie(data, total) {
     '</div>';
 }
 
-function importData() {
-  var raw = document.getElementById("paste-input").value.trim();
+function finishImportMulti(txs, accounts, source) {
+  if (!txs.length) { setStatus("Nothing new to import", "err"); return; }
+  S.txs = S.txs.concat(txs);
+  accounts.forEach(function(account) {
+    if (S.accounts.indexOf(account) === -1) S.accounts.push(account);
+  });
+  S.month = mkey(txs[0] ? txs[0].date : new Date().toISOString());
+  S.acctFilter = "all";
+
+  // Auto-detect instalment purchases
+  var autoPlans = [];
+  txs.forEach(function(tx) {
+    if (tx.type !== "debit") return;
+    var isStepPay = tx.account === "StepPay";
+    var isPayPalIn4 = (tx.description || "").toLowerCase().indexOf("pay in 4") !== -1;
+    if (!isStepPay && !isPayPalIn4) return;
+    if (tx.amount < 100) return;
+    var existing = getInstalments().filter(function(i) {
+      return Math.abs(i.totalAmount - tx.amount) < 0.01 &&
+        Math.abs(new Date(i.purchaseDate) - new Date(tx.date)) < 86400000 * 3;
+    });
+    if (existing.length) return;
+    var provider = isStepPay ? "steppay" : "paypal";
+    var dates = getInstalmentDates(provider, tx.date);
+    var instAmt = +(tx.amount / 4).toFixed(2);
+    var payments = dates.map(function(d, i) {
+      return { date: d, amount: i === 3 ? +(tx.amount - instAmt * 3).toFixed(2) : instAmt, paid: false };
+    });
+    var providerLabels = { steppay: "StepPay", paypal: "PayPal Pay in 4" };
+    var instalments = getInstalments();
+    instalments.push({
+      id: "inst-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+      description: tx.description,
+      totalAmount: tx.amount,
+      purchaseDate: tx.date,
+      provider: provider,
+      providerLabel: providerLabels[provider] || "Pay in 4",
+      payments: payments
+    });
+    saveInstalments(instalments);
+    autoPlans.push(tx.description);
+  });
+
+  save(); render();
+  var inputId = source === 'dash' ? 'paste-input-dash' : 'paste-input';
+  var el = document.getElementById(inputId);
+  if (el) el.value = "";
+  var accountLabel = accounts.length === 1 ? accounts[0] : accounts.length + " accounts";
+  var msg = "Added " + txs.length + " transaction" + (txs.length !== 1 ? "s" : "") + " across " + accountLabel;
+  if (autoPlans.length) msg += " · 💳 Instalment plan created for " + autoPlans.join(", ");
+  setStatus(msg, "ok");
+  if (source !== 'dash') swDrop("dash", "Dashboard");
+}
+
+
+
+function importDataFrom(source) {
+  var inputId = source === 'dash' ? 'paste-input-dash' : 'paste-input';
+  var raw = document.getElementById(inputId).value.trim();
   if (!raw) { setStatus("Nothing to import — paste the JSON from Claude first", "err"); return; }
   var parsed = exJSON(raw);
-  if (!parsed || !parsed.transactions) { setStatus("Could not read that — copy the full JSON block from Claude", "err"); return; }
-  var account = parsed.account || "Unknown Account";
-  var newTxs = (parsed.transactions || []).map(function(t, i) {
-    return {
-      id: Date.now() + "-" + i,
-      description: t.description || "Unknown",
-      amount: parseFloat(t.amount) || 0,
-      date: t.date || new Date().toISOString().slice(0,10),
-      type: t.type === "credit" ? "credit" : "debit",
-      category: getCat(t.category).id === (t.category || "") ? t.category : "uncategorised",
-      account: account
-    };
+  if (!parsed) { setStatus("Could not read that — copy the full JSON block from Claude", "err"); return; }
+
+  var blocks = Array.isArray(parsed) ? parsed : [parsed];
+  if (!blocks.length || !blocks[0].transactions) { setStatus("Could not read that — copy the full JSON block from Claude", "err"); return; }
+
+  var allNewTxs = [];
+  blocks.forEach(function(block) {
+    var account = block.account || "Unknown Account";
+    var txs = (block.transactions || []).map(function(t, i) {
+      var importedCat = getCat(t.category).id === (t.category || "") ? t.category : "uncategorised";
+      var smartCat = (importedCat === "uncategorised" || !importedCat)
+        ? (getMerchantCategory(t.description || "") || "uncategorised")
+        : importedCat;
+      return {
+        id: Date.now() + "-" + Math.random().toString(36).slice(2) + "-" + i,
+        description: t.description || "Unknown",
+        amount: parseFloat(t.amount) || 0,
+        date: t.date || new Date().toISOString().slice(0,10),
+        type: t.type === "credit" ? "credit" : "debit",
+        category: smartCat,
+        account: account
+      };
+    });
+    allNewTxs = allNewTxs.concat(txs);
   });
-  S.txs = S.txs.concat(newTxs);
-  if (S.accounts.indexOf(account) === -1) S.accounts.push(account);
-  S.month = mkey(newTxs[0] ? newTxs[0].date : new Date().toISOString());
-  S.acctFilter = "all";
-  save(); render();
-  document.getElementById("paste-input").value = "";
-  setStatus("Added " + newTxs.length + " transaction" + (newTxs.length !== 1 ? "s" : "") + " from " + account, "ok");
-  sw("dash", document.querySelectorAll(".tab")[0]);
+
+  var dupes = allNewTxs.filter(function(t) { return isDuplicate(t); });
+  var clean = allNewTxs.filter(function(t) { return !isDuplicate(t); });
+  var importedAccounts = blocks.map(function(b) { return b.account || "Unknown Account"; })
+    .filter(function(a, i, arr) { return arr.indexOf(a) === i; });
+
+  if (!dupes.length) {
+    finishImportMulti(allNewTxs, importedAccounts, source);
+    return;
+  }
+
+  pendingImport = { all: allNewTxs, clean: clean, dupes: dupes, accounts: importedAccounts };
+  pendingImportSource = source;
+
+  var listId = source === 'dash' ? 'dedup-list-dash' : 'dedup-list';
+  var cardId = source === 'dash' ? 'dedup-review-card-dash' : 'dedup-review-card';
+  var list = document.getElementById(listId);
+  if (list) list.innerHTML = dupes.map(function(t, i) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">' +
+      '<input type="checkbox" id="dedup-' + source + '-' + i + '" style="width:18px;height:18px;cursor:pointer">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + t.description + '</div>' +
+        '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + t.account + ' · ' + t.date + ' · ' + (t.type === "credit" ? "+" : "-") + "$" + t.amount.toFixed(2) + '</div>' +
+      '</div>' +
+      '<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:rgba(232,196,74,0.15);color:#e8c44a;flex-shrink:0">duplicate?</span>' +
+    '</div>';
+  }).join("");
+  var card = document.getElementById(cardId);
+  if (card) card.style.display = "block";
+  setStatus(clean.length + " new · " + dupes.length + " possible duplicate" + (dupes.length !== 1 ? "s" : "") + " — review below", "ok");
 }
+
+function confirmImport() { confirmImportFrom('add'); }
+
+function confirmImportFrom(source) {
+  if (!pendingImport) return;
+  var checkedDupes = pendingImport.dupes.filter(function(t, i) {
+    var cb = document.getElementById("dedup-" + source + "-" + i);
+    return cb && cb.checked;
+  });
+  finishImportMulti(pendingImport.clean.concat(checkedDupes), pendingImport.accounts, source);
+  var card = document.getElementById(source === 'dash' ? 'dedup-review-card-dash' : 'dedup-review-card');
+  if (card) card.style.display = "none";
+  pendingImport = null;
+  pendingImportSource = null;
+}
+
+function cancelImport() {
+  if (!pendingImport) return;
+  finishImportMulti(pendingImport.clean, pendingImport.accounts, pendingImportSource);
+  var card = document.getElementById(pendingImportSource === 'dash' ? 'dedup-review-card-dash' : 'dedup-review-card');
+  if (card) card.style.display = "none";
+  pendingImport = null;
+  pendingImportSource = null;
+}
+
+
 
 function saveCreditLimit(account) {
   var safeId = "cl-sb-" + account.replace(/\s/g,"_");
@@ -1594,7 +1717,6 @@ function render() {
   // Spending alerts and recurring detection
   renderSpendingAlerts();
   renderRecurringAlerts();
-  renderWeeklyTracker();
   renderDashWidgets();
 }
 
@@ -3303,8 +3425,8 @@ function renderDashWidgets() {
   });
 
   el.innerHTML = html;
-  // Re-run weekly tracker to populate its newly rendered elements
-  try { renderWeeklyTracker(); } catch(e) {}
+  // Re-run weekly tracker after DOM update
+  setTimeout(function() { try { renderWeeklyTracker(); } catch(e) {} }, 0);
 }
 
 function capitalise(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
