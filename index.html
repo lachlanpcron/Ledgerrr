@@ -547,7 +547,7 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <div class="card-label">Paste transaction data</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.7">Send a bank screenshot to Claude in chat. Copy the JSON it gives you and paste below.</p>
         <textarea class="paste-area" id="paste-input" placeholder='{"account":"CommBank Complete Access","transactions":[]}'></textarea>
-        <button class="import-btn" onclick="importData()">Import transactions</button>
+        <button class="import-btn" onclick="importDataFrom('add')">Import transactions</button>
       </div>
       <div class="how-box">
         <strong style="color:var(--text);display:block;margin-bottom:6px">How it works</strong>
@@ -1416,19 +1416,23 @@ function render() {
   });
   byCat.sort(function(a,b) { return b.total - a.total; });
   var pieTotal = byCat.reduce(function(s,c) { return s+c.total; }, 0);
-  document.getElementById("d-pie").innerHTML = buildPie(byCat, pieTotal || totalSpend);
+  var pieEl = document.getElementById("d-pie");
+  if (pieEl) pieEl.innerHTML = buildPie(byCat, pieTotal || totalSpend);
 
   // Upcoming
   var today = new Date(); today.setHours(0,0,0,0);
   var upcoming = S.txs.filter(function(t) { return new Date(t.date) > today && t.type === "debit"; }).sort(function(a,b) { return new Date(a.date)-new Date(b.date); }).slice(0,6);
   var upCard = document.getElementById("upcoming-card");
-  if (upcoming.length) {
-    upCard.style.display = "block";
-    document.getElementById("upcoming-list").innerHTML = upcoming.map(function(t) {
-      var diff = Math.ceil((new Date(t.date) - today) / (1000*60*60*24));
-      return '<div class="upcoming-item"><div><div class="upcoming-desc">' + t.description + '</div><div class="upcoming-sub">' + t.date + ' · in ' + diff + ' day' + (diff !== 1 ? "s" : "") + ' · ' + t.account + '</div></div><div class="upcoming-amt">-' + fmt(t.amount) + '</div></div>';
-    }).join("");
-  } else { upCard.style.display = "none"; }
+  if (upCard) {
+    if (upcoming.length) {
+      upCard.style.display = "block";
+      var upList = document.getElementById("upcoming-list");
+      if (upList) upList.innerHTML = upcoming.map(function(t) {
+        var diff = Math.ceil((new Date(t.date) - today) / (1000*60*60*24));
+        return '<div class="upcoming-item"><div><div class="upcoming-desc">' + t.description + '</div><div class="upcoming-sub">' + t.date + ' · in ' + diff + ' day' + (diff !== 1 ? "s" : "") + ' · ' + t.account + '</div></div><div class="upcoming-amt">-' + fmt(t.amount) + '</div></div>';
+      }).join("");
+    } else { upCard.style.display = "none"; }
+  }
 
   // Accounts tab
   var allMonthTxs = S.txs.filter(function(t) { return mkey(t.date) === cm; });
@@ -3777,7 +3781,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v7";',
+    'var CACHE = "ledger-v8";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
