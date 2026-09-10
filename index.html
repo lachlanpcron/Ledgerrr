@@ -1247,6 +1247,15 @@ function finishImportMulti(txs, accounts, source) {
 
 
 
+function isDuplicate(tx) {
+  return S.txs.some(function(existing) {
+    return existing.account === tx.account &&
+      existing.date === tx.date &&
+      Math.abs(existing.amount - tx.amount) < 0.01 &&
+      existing.description.trim().toLowerCase() === tx.description.trim().toLowerCase();
+  });
+}
+
 function importDataFrom(source) {
   var inputId = source === 'dash' ? 'paste-input-dash' : 'paste-input';
   var raw = document.getElementById(inputId).value.trim();
@@ -1262,16 +1271,13 @@ function importDataFrom(source) {
     var account = block.account || "Unknown Account";
     var txs = (block.transactions || []).map(function(t, i) {
       var importedCat = getCat(t.category).id === (t.category || "") ? t.category : "uncategorised";
-      var smartCat = (importedCat === "uncategorised" || !importedCat)
-        ? (getMerchantCategory(t.description || "") || "uncategorised")
-        : importedCat;
       return {
         id: Date.now() + "-" + Math.random().toString(36).slice(2) + "-" + i,
         description: t.description || "Unknown",
         amount: parseFloat(t.amount) || 0,
         date: t.date || new Date().toISOString().slice(0,10),
         type: t.type === "credit" ? "credit" : "debit",
-        category: smartCat,
+        category: importedCat,
         account: account
       };
     });
@@ -1842,8 +1848,20 @@ function itemMonthly(item, useLinked) {
   }
   return item.freq * item.amount;
 }
+function itemWeekly(item, useLinked) {
+  // Frequency-aware: a "Weekly" item's /wk figure is exactly what was typed,
+  // not a re-derived monthly/4.33 approximation (which drifts from the input).
+  if (!item.incomeLinked && !item.isPct) {
+    if (item.freq === 4) return item.amount;           // Weekly
+    if (item.freq === 2) return item.amount / 2;        // Fortnightly
+  }
+  return itemMonthly(item, useLinked) / 4.33;
+}
 function sectionMonthly(section, useLinked) {
   return section.items.reduce(function(s, i) { return s + itemMonthly(i, useLinked); }, 0);
+}
+function sectionWeekly(section, useLinked) {
+  return section.items.reduce(function(s, i) { return s + itemWeekly(i, useLinked); }, 0);
 }
 
 function toggleBudgetItemPct(si, ii) {
@@ -3462,7 +3480,7 @@ function renderBudgetViewMode() {
     var isIncome = sec.name === "Income";
     var collapsed = !!S.budgetCollapsed[idx];
     var secMonthly = sectionMonthly(sec);
-    var secWeekly = secMonthly / 4.33;
+    var secWeekly = sectionWeekly(sec);
     return '<div class="card" style="margin-bottom:12px">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:' + (collapsed ? '0' : '10px') + '" onclick="toggleBudgetSection(' + idx + ')">' +
         '<div class="card-label" style="margin-bottom:0">' + sec.name + '</div>' +
@@ -3474,7 +3492,7 @@ function renderBudgetViewMode() {
       (collapsed ? '' :
         sec.items.map(function(item) {
           var monthly = itemMonthly(item);
-          var weekly = monthly / 4.33;
+          var weekly = itemWeekly(item);
           var amtStr = item.incomeLinked
             ? (item.incomePct + "% of income = $" + monthly.toFixed(0) + "/mo")
             : item.isPct
