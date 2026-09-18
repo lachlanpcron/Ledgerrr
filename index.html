@@ -839,7 +839,7 @@ var S = {
   creditLimits: {},
   calYear: new Date().getFullYear(), calMonth: new Date().getMonth(),
   calSelectedDay: null, lastSeenPayday: null,
-  pieExpanded: false, weeklyExpanded: true, darkMode: false,
+  pieExpanded: false, weeklyExpanded: true, darkMode: false, acctWidgetExpanded: false,
   acctExpanded: {}, budgetEditing: false, txDayExpanded: {},
   savingsPriority: [], savingsView: "weekly",
   dismissedAlerts: {}
@@ -1406,39 +1406,8 @@ function render() {
   document.getElementById("d-income").textContent = fmt(totalIncome);
   document.getElementById("d-net-sub").innerHTML = 'Net <span style="color:' + (net >= 0 ? "var(--green)" : "var(--red)") + '">$' + (net >= 0 ? "+" : "") + net.toFixed(2) + '</span>';
 
-  // Pie
-  // Category credits (reimbursements) to net off spending
-  var creditTxs = allTxs.filter(function(t) {
-    return t.type === "credit" && t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance";
-  });
-
-  var byCat = [];
-  S.cats.forEach(function(c) {
-    if (c.id === "transfers" || c.id === "income" || c.id === "opening-balance") return;
-    var debits = spendTxs.filter(function(t) { return t.category === c.id && !t.onceOff; }).reduce(function(s,t) { return s+t.amount; }, 0);
-    var credits = creditTxs.filter(function(t) { return t.category === c.id; }).reduce(function(s,t) { return s+t.amount; }, 0);
-    var total = Math.max(0, debits - credits);
-    if (total > 0) byCat.push({id:c.id, label:c.label, color:c.color, total:total});
-  });
-  byCat.sort(function(a,b) { return b.total - a.total; });
-  var pieTotal = byCat.reduce(function(s,c) { return s+c.total; }, 0);
-  var pieEl = document.getElementById("d-pie");
-  if (pieEl) pieEl.innerHTML = buildPie(byCat, pieTotal || totalSpend);
-
-  // Upcoming
-  var today = new Date(); today.setHours(0,0,0,0);
-  var upcoming = S.txs.filter(function(t) { return new Date(t.date) > today && t.type === "debit"; }).sort(function(a,b) { return new Date(a.date)-new Date(b.date); }).slice(0,6);
-  var upCard = document.getElementById("upcoming-card");
-  if (upCard) {
-    if (upcoming.length) {
-      upCard.style.display = "block";
-      var upList = document.getElementById("upcoming-list");
-      if (upList) upList.innerHTML = upcoming.map(function(t) {
-        var diff = Math.ceil((new Date(t.date) - today) / (1000*60*60*24));
-        return '<div class="upcoming-item"><div><div class="upcoming-desc">' + t.description + '</div><div class="upcoming-sub">' + t.date + ' · in ' + diff + ' day' + (diff !== 1 ? "s" : "") + ' · ' + t.account + '</div></div><div class="upcoming-amt">-' + fmt(t.amount) + '</div></div>';
-      }).join("");
-    } else { upCard.style.display = "none"; }
-  }
+  // Pie + Upcoming are deferred until after renderDashWidgets() below, since
+  // #d-pie / #upcoming-card only exist once the widget container HTML is built.
 
   // Accounts tab
   var allMonthTxs = S.txs.filter(function(t) { return mkey(t.date) === cm; });
@@ -1731,6 +1700,43 @@ function render() {
   renderSpendingAlerts();
   renderRecurringAlerts();
   renderDashWidgets();
+  setTimeout(function() { try { renderPieAndUpcoming(spendTxs, totalSpend); } catch(e) {} }, 0);
+}
+
+function renderPieAndUpcoming(spendTxs, totalSpend) {
+  var allTxs = periodTxs("all");
+  // Category credits (reimbursements) to net off spending
+  var creditTxs = allTxs.filter(function(t) {
+    return t.type === "credit" && t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance";
+  });
+
+  var byCat = [];
+  S.cats.forEach(function(c) {
+    if (c.id === "transfers" || c.id === "income" || c.id === "opening-balance") return;
+    var debits = spendTxs.filter(function(t) { return t.category === c.id && !t.onceOff; }).reduce(function(s,t) { return s+t.amount; }, 0);
+    var credits = creditTxs.filter(function(t) { return t.category === c.id; }).reduce(function(s,t) { return s+t.amount; }, 0);
+    var total = Math.max(0, debits - credits);
+    if (total > 0) byCat.push({id:c.id, label:c.label, color:c.color, total:total});
+  });
+  byCat.sort(function(a,b) { return b.total - a.total; });
+  var pieTotal = byCat.reduce(function(s,c) { return s+c.total; }, 0);
+  var pieEl = document.getElementById("d-pie");
+  if (pieEl) pieEl.innerHTML = buildPie(byCat, pieTotal || totalSpend);
+
+  // Upcoming
+  var today = new Date(); today.setHours(0,0,0,0);
+  var upcoming = S.txs.filter(function(t) { return new Date(t.date) > today && t.type === "debit"; }).sort(function(a,b) { return new Date(a.date)-new Date(b.date); }).slice(0,6);
+  var upCard = document.getElementById("upcoming-card");
+  if (upCard) {
+    if (upcoming.length) {
+      upCard.style.display = "block";
+      var upList = document.getElementById("upcoming-list");
+      if (upList) upList.innerHTML = upcoming.map(function(t) {
+        var diff = Math.ceil((new Date(t.date) - today) / (1000*60*60*24));
+        return '<div class="upcoming-item"><div><div class="upcoming-desc">' + t.description + '</div><div class="upcoming-sub">' + t.date + ' · in ' + diff + ' day' + (diff !== 1 ? "s" : "") + ' · ' + t.account + '</div></div><div class="upcoming-amt">-' + fmt(t.amount) + '</div></div>';
+      }).join("");
+    } else { upCard.style.display = "none"; }
+  }
 }
 
 function sw(name, btn) {
@@ -2641,7 +2647,7 @@ function renderCalendar() {
   // Month summary
   var moTxs = S.txs.filter(function(t) { return t.date && t.date.slice(0,7) === moStr; });
   var moSpend = moTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
-  var moIncome = moTxs.filter(function(t) { return t.type === "credit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+  var moIncome = moTxs.filter(function(t) { return t.type === "credit" && t.category === "income"; }).reduce(function(s,t) { return s+t.amount; }, 0);
   var moUpcoming = moTxs.filter(function(t) { return new Date(t.date) > today && t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
   document.getElementById("cal-month-summary").innerHTML =
     '<div class="cal-summary-row"><span style="font-size:13px;color:var(--muted)">Income</span><span style="font-size:13px;font-weight:600;color:var(--green)">+$' + moIncome.toFixed(2) + '</span></div>' +
@@ -3374,14 +3380,19 @@ function renderDashWidgets() {
 
     } else if (id === 'accounts') {
       var accts = S.accounts || [];
-      var acctSummary = accts.slice(0,3).map(function(a) {
+      var acctShowCount = S.acctWidgetExpanded ? accts.length : 3;
+      var acctSummary = accts.slice(0, acctShowCount).map(function(a) {
         var bal = acctBalance(a);
         return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0">' +
           '<span>' + a + '</span>' +
           '<span style="font-weight:500;color:' + (bal < 0 ? 'var(--red)' : 'var(--green)') + '">' + fmt(bal) + '</span>' +
         '</div>';
       }).join('');
-      if (accts.length > 3) acctSummary += '<div style="font-size:11px;color:var(--muted);padding-top:4px">+' + (accts.length-3) + ' more…</div>';
+      if (accts.length > 3) {
+        acctSummary += '<div style="font-size:11px;color:var(--accent);padding-top:4px;cursor:pointer" onclick="event.stopPropagation();toggleAcctWidgetExpand()">' +
+          (S.acctWidgetExpanded ? 'Show less' : '+' + (accts.length - 3) + ' more…') +
+        '</div>';
+      }
       html += '<div class="card" style="margin-bottom:14px;' + tapStyle + '" onclick="' + nav + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
           '<div class="card-label" style="margin-bottom:0">' + w.icon + ' Accounts</div>' +
@@ -3413,8 +3424,8 @@ function renderDashWidgets() {
 
     } else if (id === 'cashflow') {
       var allT = (S.txs || []).filter(function(t){ return mkey(t.date) === curMonth(); });
-      var inc = allT.filter(function(t){return t.type==='credit';}).reduce(function(s,t){return s+t.amount;},0);
-      var exp = allT.filter(function(t){return t.type==='debit';}).reduce(function(s,t){return s+t.amount;},0);
+      var inc = allT.filter(function(t){return t.type==='credit' && t.category==='income';}).reduce(function(s,t){return s+t.amount;},0);
+      var exp = allT.filter(function(t){return t.type==='debit' && t.category!=='transfers' && t.category!=='opening-balance';}).reduce(function(s,t){return s+t.amount;},0);
       var net = inc - exp;
       html += '<div class="card" style="margin-bottom:14px;' + tapStyle + '" onclick="' + nav + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
@@ -3749,6 +3760,11 @@ function togglePieDetails() {
   var chevron = document.getElementById("pie-chevron");
   if (legend) legend.style.display = S.pieExpanded ? "flex" : "none";
   if (chevron) chevron.style.transform = S.pieExpanded ? "rotate(180deg)" : "";
+}
+
+function toggleAcctWidgetExpand() {
+  S.acctWidgetExpanded = !S.acctWidgetExpanded;
+  render();
 }
 
 function toggleWeeklyTracker() {
