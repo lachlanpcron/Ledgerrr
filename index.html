@@ -488,6 +488,7 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
 
     <div id="tab-cashflow" style="display:none">
       <div class="card"><div class="card-label">This month</div><div id="cf-summary"></div></div>
+      <div class="card"><div class="card-label">Spending breakdown</div><div id="cf-pie"></div></div>
       <div class="card"><div class="card-label">Month by month</div><div id="cf-history"><div class="empty">Not enough data yet</div></div></div>
       <div class="card"><div class="card-label">Savings progress</div><div id="cf-savings"><div class="empty">No savings accounts detected yet</div></div></div>
     </div>
@@ -572,6 +573,7 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <div class="card-label">Data</div>
         <button class="danger-btn" onclick="resetData()">Reset all data</button>
       </div>
+      <div style="text-align:center;padding:16px 0 4px;font-size:11px;color:var(--muted)" id="app-version-footer"></div>
     </div>
   </div>
 </div>
@@ -831,6 +833,7 @@ var DEFAULT_START_BAL = {
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
+var APP_VERSION = "v2"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -1162,7 +1165,8 @@ function clearNote() {
   save(); render(); closeNote();
 }
 
-function buildPie(data, total) {
+function buildPie(data, total, idSuffix) {
+  idSuffix = idSuffix || "";
   if (!data.length) return '<div class="empty">No spend data this period</div>';
   var cx = 105, cy = 105, r = 90, inner = 50;
   var angle = -Math.PI / 2, paths = "";
@@ -1180,11 +1184,11 @@ function buildPie(data, total) {
     return '<div class="legend-row" onclick="openCatModal(\'' + d.id + '\',\'' + d.label + '\',\'' + d.color + '\')"><div class="legend-left"><span style="width:10px;height:10px;border-radius:50%;background:' + d.color + ';display:inline-block;flex-shrink:0"></span><span style="font-size:13px">' + d.label + '</span></div><div class="legend-right"><span class="legend-pct">' + ((d.total/total)*100).toFixed(0) + '%</span><span class="legend-amt">' + fmt(d.total) + '</span></div></div>';
   }).join("");
   return '<div class="pie-wrap">' +
-    '<svg class="pie-svg" viewBox="0 0 210 210" style="cursor:pointer" onclick="togglePieDetails()"><g>' + paths + '</g>' +
+    '<svg class="pie-svg" viewBox="0 0 210 210" style="cursor:pointer" onclick="togglePieDetails(\'' + idSuffix + '\')"><g>' + paths + '</g>' +
     '<text x="105" y="99" text-anchor="middle" fill="var(--muted)" font-size="11" font-family="-apple-system,sans-serif">SPENT</text>' +
     '<text x="105" y="118" text-anchor="middle" fill="var(--text)" font-size="17" font-weight="700" font-family="-apple-system,sans-serif">' + fmt(total) + '</text>' +
     '</svg>' +
-    '<div id="pie-legend" style="width:100%;display:' + (S.pieExpanded ? 'flex' : 'none') + ';flex-direction:column;gap:6px">' +
+    '<div id="pie-legend' + idSuffix + '" style="width:100%;display:' + (S.pieExpanded ? 'flex' : 'none') + ';flex-direction:column;gap:6px">' +
     '<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:-10px;margin-bottom:4px">Tap a segment for details</div>' +
     legend +
     '</div>' +
@@ -1559,6 +1563,25 @@ function render() {
     (cfTransferred > 0 ? '<div class="cf-row"><span class="cf-label">Transferred to savings</span><span class="cf-val" style="color:var(--accent)">-' + fmt(cfTransferred) + '</span></div>' : '') +
     '<div class="cf-row" style="border:none"><span class="cf-label" style="font-weight:600;color:var(--text)">Net position</span><span class="cf-val" style="color:' + (cfNet >= 0 ? "var(--green)" : "var(--red)") + '">' + (cfNet >= 0 ? "+" : "") + '$' + cfNet.toFixed(2) + '</span></div>';
 
+  // Cash flow spending breakdown pie — same category logic as the dashboard pie, scoped to this calendar month
+  var cfPieEl = document.getElementById("cf-pie");
+  if (cfPieEl) {
+    var cfCreditTxs = allMonthTxs.filter(function(t) {
+      return t.type === "credit" && t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance";
+    });
+    var cfByCat = [];
+    S.cats.forEach(function(c) {
+      if (c.id === "transfers" || c.id === "income" || c.id === "opening-balance") return;
+      var debits = cfTxs.filter(function(t) { return t.type === "debit" && t.category === c.id && !t.onceOff; }).reduce(function(s,t) { return s+t.amount; }, 0);
+      var credits = cfCreditTxs.filter(function(t) { return t.category === c.id; }).reduce(function(s,t) { return s+t.amount; }, 0);
+      var total = Math.max(0, debits - credits);
+      if (total > 0) cfByCat.push({id:c.id, label:c.label, color:c.color, total:total});
+    });
+    cfByCat.sort(function(a,b) { return b.total - a.total; });
+    var cfPieTotal = cfByCat.reduce(function(s,c) { return s+c.total; }, 0);
+    cfPieEl.innerHTML = buildPie(cfByCat, cfPieTotal || cfSpend, "-cf");
+  }
+
   var cfHist = document.getElementById("cf-history");
   if (!ms.length) { cfHist.innerHTML = '<div class="empty">Not enough data yet</div>'; }
   else {
@@ -1689,6 +1712,7 @@ function render() {
   }
 
   // Cat list
+  document.getElementById("app-version-footer").textContent = "Pocket Accountant " + APP_VERSION;
   document.getElementById("cat-list").innerHTML = S.cats.map(function(c) {
     var count = S.txs.filter(function(t) { return t.category === c.id; }).length;
     var isPreset = false;
@@ -3754,10 +3778,11 @@ function toggleTheme() {
   try { localStorage.setItem("ldg-theme", S.darkMode ? "dark" : "light"); } catch(e) {}
 }
 
-function togglePieDetails() {
+function togglePieDetails(idSuffix) {
+  idSuffix = idSuffix || "";
   S.pieExpanded = !S.pieExpanded;
-  var legend = document.getElementById("pie-legend");
-  var chevron = document.getElementById("pie-chevron");
+  var legend = document.getElementById("pie-legend" + idSuffix);
+  var chevron = document.getElementById("pie-chevron" + idSuffix);
   if (legend) legend.style.display = S.pieExpanded ? "flex" : "none";
   if (chevron) chevron.style.transform = S.pieExpanded ? "rotate(180deg)" : "";
 }
