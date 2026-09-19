@@ -833,7 +833,7 @@ var DEFAULT_START_BAL = {
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
-var APP_VERSION = "v3"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v5"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -1550,6 +1550,8 @@ function render() {
   var cfTransferred = allMonthTxs.filter(function(t) {
     return t.category === "transfers" && t.type === "debit" &&
       t.description.toLowerCase().indexOf("opening balance") === -1 &&
+      t.description.toLowerCase().indexOf("steppay") === -1 &&
+      t.description.toLowerCase().indexOf("repayment") === -1 &&
       DEBT_ACCTS.indexOf(t.account) === -1;
   }).reduce(function(s,t) { return s+t.amount; }, 0);
   // Debt repayments — transfers out from debt accounts (Steppay, Mastercard repayments)
@@ -1557,13 +1559,13 @@ function render() {
     return t.category === "transfers" && t.type === "debit" &&
       (DEBT_ACCTS.indexOf(t.account) !== -1 || t.description.toLowerCase().indexOf("steppay") !== -1 || t.description.toLowerCase().indexOf("repayment") !== -1);
   }).reduce(function(s,t) { return s+t.amount; }, 0);
-  var cfNet = cfIncome - cfSpend - cfTransferred - cfDebtRepay;
+  var cfNet = cfIncome - cfSpend;
   document.getElementById("cf-summary").innerHTML =
     '<div class="cf-row"><span class="cf-label">Income</span><span class="cf-val" style="color:var(--green)">+' + fmt(cfIncome) + '</span></div>' +
     '<div class="cf-row"><span class="cf-label">Spending</span><span class="cf-val" style="color:var(--red)">-' + fmt(cfSpend) + '</span></div>' +
-    (cfDebtRepay > 0 ? '<div class="cf-row"><span class="cf-label">Debt repayments</span><span class="cf-val" style="color:var(--orange)">-' + fmt(cfDebtRepay) + '</span></div>' : '') +
-    (cfTransferred > 0 ? '<div class="cf-row"><span class="cf-label">Transferred to savings</span><span class="cf-val" style="color:var(--accent)">-' + fmt(cfTransferred) + '</span></div>' : '') +
-    '<div class="cf-row" style="border:none"><span class="cf-label" style="font-weight:600;color:var(--text)">Net position</span><span class="cf-val" style="color:' + (cfNet >= 0 ? "var(--green)" : "var(--red)") + '">' + (cfNet >= 0 ? "+" : "") + '$' + cfNet.toFixed(2) + '</span></div>';
+    '<div class="cf-row" style="border:none"><span class="cf-label" style="font-weight:600;color:var(--text)">Net position</span><span class="cf-val" style="color:' + (cfNet >= 0 ? "var(--green)" : "var(--red)") + '">' + (cfNet >= 0 ? "+" : "") + '$' + cfNet.toFixed(2) + '</span></div>' +
+    (cfDebtRepay > 0 ? '<div class="cf-row" style="margin-top:6px"><span class="cf-label" style="font-size:12px">Debt repayments <span style="color:var(--muted)">(not counted above — moves cash to reduced debt, doesn\'t change net worth)</span></span><span class="cf-val" style="color:var(--orange);font-size:12px">-' + fmt(cfDebtRepay) + '</span></div>' : '') +
+    (cfTransferred > 0 ? '<div class="cf-row"><span class="cf-label" style="font-size:12px">Transferred to savings <span style="color:var(--muted)">(not counted above — still yours)</span></span><span class="cf-val" style="color:var(--accent);font-size:12px">-' + fmt(cfTransferred) + '</span></div>' : '');
 
   // Cash flow spending breakdown pie — same category logic as the dashboard pie, scoped to this calendar month
   var cfPieEl = document.getElementById("cf-pie");
@@ -2286,7 +2288,7 @@ function renderGoals() {
   var avgWeeklySavings = (function() {
     var today = new Date(); today.setHours(0,0,0,0);
     var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
-    var inc = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "credit" && t.category === "income" && d >= eightWeeksAgo; }).reduce(function(s,t) { return s+t.amount; }, 0);
+    var inc = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "credit" && t.category === "income" && !t.onceOff && d >= eightWeeksAgo; }).reduce(function(s,t) { return s+t.amount; }, 0);
     var spd = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "debit" && t.category !== "transfers" && d >= eightWeeksAgo; }).reduce(function(s,t) { return s+t.amount; }, 0);
     var weeks = Math.max(1, Math.ceil((today - eightWeeksAgo) / (1000*60*60*24*7)));
     return Math.max(0, (inc - spd) / weeks);
@@ -2364,7 +2366,7 @@ function renderGoals() {
       var pctPaid = startBal > 0 ? Math.min(100, (paid / startBal) * 100) : 0;
       var today = new Date(); today.setHours(0,0,0,0);
       var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
-      var repayTxs = S.txs.filter(function(t) { var d = new Date(t.date); return t.account === g.debtAccount && t.type === "debit" && d >= eightWeeksAgo; });
+      var repayTxs = S.txs.filter(function(t) { var d = new Date(t.date); return t.account === g.debtAccount && t.type === "credit" && d >= eightWeeksAgo; });
       var weeks8 = Math.max(1, Math.ceil((today - eightWeeksAgo) / (1000*60*60*24*7)));
       var avgWeeklyRepay = repayTxs.reduce(function(s,t) { return s+t.amount; }, 0) / weeks8;
       var extraWeekly = g.extraWeekly || 0;
@@ -3604,7 +3606,7 @@ function getWeekBounds(offsetWeeks) {
 function getWeekSpend(startStr, endStr) {
   var txs = S.txs.filter(function(t) {
     return t.date >= startStr && t.date <= endStr &&
-      t.type === "debit" &&
+      t.type === "debit" && !t.onceOff &&
       t.category !== "transfers" && t.category !== "opening-balance" &&
       t.description.toLowerCase().indexOf("opening balance") === -1;
   });
