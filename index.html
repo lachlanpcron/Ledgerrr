@@ -833,7 +833,7 @@ var DEFAULT_START_BAL = {
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
-var APP_VERSION = "v2"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v3"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -1275,7 +1275,7 @@ function importDataFrom(source) {
     var account = block.account || "Unknown Account";
     var txs = (block.transactions || []).map(function(t, i) {
       var importedCat = getCat(t.category).id === (t.category || "") ? t.category : "uncategorised";
-      return {
+      var txObj = {
         id: Date.now() + "-" + Math.random().toString(36).slice(2) + "-" + i,
         description: t.description || "Unknown",
         amount: parseFloat(t.amount) || 0,
@@ -1284,6 +1284,8 @@ function importDataFrom(source) {
         category: importedCat,
         account: account
       };
+      if (t.onceOff) txObj.onceOff = true;
+      return txObj;
     });
     allNewTxs = allNewTxs.concat(txs);
   });
@@ -1858,7 +1860,7 @@ function getEffectiveMonthlyIncome() {
   var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
   var recentIncomeTxs = S.txs.filter(function(t) {
     var d = new Date(t.date);
-    return t.type === "credit" && t.category === "income" && d >= eightWeeksAgo && d <= today;
+    return t.type === "credit" && t.category === "income" && !t.onceOff && d >= eightWeeksAgo && d <= today;
   });
   if (recentIncomeTxs.length > 0) {
     var rollingWeeks = Math.max(1, Math.ceil((today - eightWeeksAgo) / (1000*60*60*24*7)));
@@ -1928,7 +1930,7 @@ function renderBudget() {
   var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
   var recentIncomeTxs = S.txs.filter(function(t) {
     var d = new Date(t.date);
-    return t.type === "credit" && t.category === "income" && d >= eightWeeksAgo && d <= today;
+    return t.type === "credit" && t.category === "income" && !t.onceOff && d >= eightWeeksAgo && d <= today;
   });
   var rollingWeeks = Math.max(1, Math.ceil((today - eightWeeksAgo) / (1000*60*60*24*7)));
   var rollingWeeklyIncome = recentIncomeTxs.reduce(function(s,t) { return s+t.amount; }, 0) / rollingWeeks;
