@@ -833,7 +833,7 @@ var DEFAULT_START_BAL = {
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
-var APP_VERSION = "v5"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v7"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -983,9 +983,18 @@ function acctBalance(a) {
 
 function setStatus(msg, type) {
   var el = document.getElementById("status-box");
+  if (!el) return;
   el.textContent = msg; el.className = "status " + type; el.style.display = "block";
-  setTimeout(function() { el.style.display = "none"; }, 5000);
+  var hideAfter = type === "err" ? 15000 : 5000;
+  setTimeout(function() { el.style.display = "none"; }, hideAfter);
 }
+
+window.onerror = function(msg, src, line, col, err) {
+  try {
+    setStatus("⚠ Something broke: " + msg + " (line " + line + ") — screenshot this and send it to Claude", "err");
+  } catch(e) {}
+  return false;
+};
 
 function exJSON(text) {
   try { return JSON.parse(text); } catch(e) {}
@@ -1193,6 +1202,27 @@ function buildPie(data, total, idSuffix) {
     legend +
     '</div>' +
     '</div>';
+}
+
+function getInstalments() {
+  return S.instalments || [];
+}
+function saveInstalments(instalments) {
+  S.instalments = instalments;
+  try { localStorage.setItem("ldg-inst", JSON.stringify(S.instalments)); } catch(e) {}
+}
+function getInstalmentDates(provider, purchaseDateStr) {
+  // StepPay repays weekly (matches observed real StepPay repayment cadence);
+  // PayPal "Pay in 4" is the standard fortnightly BNPL schedule.
+  var base = new Date(purchaseDateStr);
+  var stepDays = provider === "paypal" ? 14 : 7;
+  var dates = [];
+  for (var i = 1; i <= 4; i++) {
+    var d = new Date(base);
+    d.setDate(d.getDate() + stepDays * i);
+    dates.push(dateStr(d));
+  }
+  return dates;
 }
 
 function finishImportMulti(txs, accounts, source) {
