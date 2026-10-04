@@ -833,7 +833,7 @@ var DEFAULT_START_BAL = {
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
-var APP_VERSION = "v7"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v10"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -975,7 +975,8 @@ function acctBalance(a) {
     return (manual.balance || 0) + maCredits - maDebits;
   }
   var startBal = S.startBalances[a] !== undefined ? S.startBalances[a] : 0;
-  var txs = S.txs.filter(function(t) { return t.account === a && t.date >= START_DATE; });
+  var todayStr = dateStr(new Date());
+  var txs = S.txs.filter(function(t) { return t.account === a && t.date >= START_DATE && t.date <= todayStr; });
   var credits = txs.filter(function(t) { return t.type === "credit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
   var debits = txs.filter(function(t) { return t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
   return startBal + credits - debits;
@@ -1238,6 +1239,7 @@ function finishImportMulti(txs, accounts, source) {
   var autoPlans = [];
   txs.forEach(function(tx) {
     if (tx.type !== "debit") return;
+    if (tx.skipInstalment) return;
     var isStepPay = tx.account === "StepPay";
     var isPayPalIn4 = (tx.description || "").toLowerCase().indexOf("pay in 4") !== -1;
     if (!isStepPay && !isPayPalIn4) return;
@@ -1315,6 +1317,7 @@ function importDataFrom(source) {
         account: account
       };
       if (t.onceOff) txObj.onceOff = true;
+      if (t.skipInstalment) txObj.skipInstalment = true;
       return txObj;
     });
     allNewTxs = allNewTxs.concat(txs);
@@ -1663,8 +1666,11 @@ function render() {
     debtList.innerHTML = debtAccts.map(function(a) {
       var bal = acctBalance(a);
       var startBal = S.startBalances[a] || 0;
-      var paid = startBal < 0 ? Math.max(0, startBal - bal) : 0;
-      var totalDebt = startBal < 0 ? Math.abs(startBal) : Math.abs(bal);
+      var todayStr2 = dateStr(new Date());
+      var debtTxs = S.txs.filter(function(t) { return t.account === a && t.date >= START_DATE && t.date <= todayStr2; });
+      var paid = debtTxs.filter(function(t) { return t.type === "credit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+      var newCharges = debtTxs.filter(function(t) { return t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+      var totalDebt = Math.abs(Math.min(0, startBal)) + newCharges;
       var paidPct = totalDebt > 0 ? Math.min(100, (paid/totalDebt)*100) : 0;
       var nextPay = S.txs.filter(function(t) { return t.account === a && new Date(t.date) > today2 && t.type === "debit"; }).sort(function(x,y) { return new Date(x.date)-new Date(y.date); }).slice(0,2);
       return '<div class="debt-card"><div class="debt-header"><div class="debt-name">' + a + '</div><div class="debt-badge">Debt</div></div><div class="debt-stats"><div class="debt-stat"><div class="debt-stat-label">Owing</div><div class="debt-stat-val" style="color:var(--red)">$' + Math.abs(bal).toFixed(2) + '</div></div><div class="debt-stat"><div class="debt-stat-label">Original</div><div class="debt-stat-val">$' + totalDebt.toFixed(2) + '</div></div><div class="debt-stat"><div class="debt-stat-label">Paid</div><div class="debt-stat-val" style="color:var(--green)">$' + paid.toFixed(2) + '</div></div></div><div class="debt-bar-wrap"><div class="debt-bar-label"><span>Paid off</span><span>' + paidPct.toFixed(0) + '%</span></div><div class="debt-bar-track"><div class="debt-bar-fill" style="width:' + paidPct.toFixed(1) + '%"></div></div></div>' + (nextPay.length ? '<div class="debt-next">Next: ' + nextPay.map(function(t) { return t.description + ' -$' + t.amount.toFixed(2) + ' on ' + t.date; }).join(" · ") + '</div>' : "") + '</div>';
