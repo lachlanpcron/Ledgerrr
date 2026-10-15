@@ -833,7 +833,7 @@ var DEFAULT_START_BAL = {
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
-var APP_VERSION = "v10"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v11"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -1878,14 +1878,32 @@ var DEFAULT_BUDGET = [
   ]},
   { id: "b-other", name: "Other", items: [
     { id: "bo-1", name: "Credit repayment", freq: 4, amount: 15 },
-    { id: "bo-2", name: "Investment (10% of income)", freq: 1, amount: 0, incomeLinked: true, incomePct: 10 }
+    { id: "bo-2", name: "Investment", freq: 1, amount: 10, isPct: true }
   ]}
 ];
 
+// One-time migration: older saves used a hardcoded, non-editable
+// incomeLinked/incomePct pair for the Investment item. Fold those into
+// the generic isPct/amount model every other budget item already uses,
+// so every item goes through the same editable UI and code path.
+function migrateBudgetItem(item) {
+  if (item.incomeLinked) {
+    item.isPct = true;
+    item.amount = item.incomePct;
+    item.freq = 1;
+    delete item.incomeLinked;
+    delete item.incomePct;
+  }
+  return item;
+}
 function loadBudget() {
   try {
     var b = localStorage.getItem("ldg-budget");
-    if (b) return JSON.parse(b);
+    if (b) {
+      var parsed = JSON.parse(b);
+      parsed.forEach(function(sec) { (sec.items || []).forEach(migrateBudgetItem); });
+      return parsed;
+    }
   } catch(e) {}
   return JSON.parse(JSON.stringify(DEFAULT_BUDGET));
 }
@@ -1910,9 +1928,6 @@ function getEffectiveMonthlyIncome() {
 }
 
 function itemMonthly(item, useLinked) {
-  if (item.incomeLinked && useLinked !== false) {
-    return getEffectiveMonthlyIncome() * (item.incomePct / 100);
-  }
   if (item.isPct) {
     return getEffectiveMonthlyIncome() * (item.amount / 100);
   }
@@ -1921,7 +1936,7 @@ function itemMonthly(item, useLinked) {
 function itemWeekly(item, useLinked) {
   // Frequency-aware: a "Weekly" item's /wk figure is exactly what was typed,
   // not a re-derived monthly/4.33 approximation (which drifts from the input).
-  if (!item.incomeLinked && !item.isPct) {
+  if (!item.isPct) {
     if (item.freq === 4) return item.amount;           // Weekly
     if (item.freq === 2) return item.amount / 2;        // Fortnightly
   }
@@ -2002,14 +2017,6 @@ function renderBudget() {
     var secTotal = sectionMonthly(sec);
     var secWeekly = secTotal / 4;
     var itemsHtml = sec.items.map(function(item, ii) {
-      if (item.incomeLinked) {
-        var linkedAmt = getEffectiveMonthlyIncome() * (item.incomePct / 100);
-        return '<div class="budget-item-row" style="grid-template-columns:1fr auto 28px">' +
-          '<input class="budget-item-name" type="text" value="' + item.name + '" onchange="updateBudgetItem(' + si + ',' + ii + ',\'name\',this.value)">' +
-          '<span style="font-size:12px;color:var(--accent);padding:0 8px;white-space:nowrap">' + item.incomePct + '% of income = $' + linkedAmt.toFixed(2) + '/mo</span>' +
-          '<button class="budget-item-del" onclick="deleteBudgetItem(' + si + ',' + ii + ')">×</button>' +
-          '</div>';
-      }
       var isPct = item.isPct || false;
       var freqOpts = [
         {v:0.33,l:"Quarterly"},{v:1,l:"Monthly"},{v:2,l:"Fortnightly"},{v:4,l:"Weekly"},{v:12,l:"Yearly÷12"}
@@ -3568,10 +3575,8 @@ function renderBudgetViewMode() {
         sec.items.map(function(item) {
           var monthly = itemMonthly(item);
           var weekly = itemWeekly(item);
-          var amtStr = item.incomeLinked
-            ? (item.incomePct + "% of income = $" + monthly.toFixed(0) + "/mo")
-            : item.isPct
-            ? (item.amount + "% = $" + monthly.toFixed(0) + "/mo")
+          var amtStr = item.isPct
+            ? (item.amount + "% of income = $" + monthly.toFixed(0) + "/mo")
             : "$" + monthly.toFixed(0) + "/mo · $" + weekly.toFixed(0) + "/wk";
           return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
             '<span style="font-size:13px">' + item.name + '</span>' +
@@ -3880,7 +3885,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v8";',
+    'var CACHE = "ledger-v9";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
