@@ -833,7 +833,7 @@ var DEFAULT_START_BAL = {
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
-var APP_VERSION = "v11"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v12"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -1911,16 +1911,27 @@ function saveBudget() {
   localStorage.setItem("ldg-budget", JSON.stringify(S.budget));
 }
 
-function getEffectiveMonthlyIncome() {
+// The "rolling last 8 weeks" window used for averaging income/spend, capped
+// so it never reaches back before START_DATE (when transaction tracking
+// began). Without this cap, a user with less than 8 weeks of real history
+// still gets divided by a flat 8 weeks, diluting the average with weeks
+// that never had any data to begin with.
+function rollingWindow() {
   var today = new Date(); today.setHours(0,0,0,0);
   var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
+  var startBound = new Date(START_DATE); startBound.setHours(0,0,0,0);
+  var start = eightWeeksAgo > startBound ? eightWeeksAgo : startBound;
+  return { today: today, start: start, weeks: Math.max(1, (today - start) / (1000*60*60*24*7)) };
+}
+
+function getEffectiveMonthlyIncome() {
+  var win = rollingWindow();
   var recentIncomeTxs = S.txs.filter(function(t) {
     var d = new Date(t.date);
-    return t.type === "credit" && t.category === "income" && !t.onceOff && d >= eightWeeksAgo && d <= today;
+    return t.type === "credit" && t.category === "income" && !t.onceOff && d >= win.start && d <= win.today;
   });
   if (recentIncomeTxs.length > 0) {
-    var rollingWeeks = Math.max(1, Math.ceil((today - eightWeeksAgo) / (1000*60*60*24*7)));
-    return (recentIncomeTxs.reduce(function(s,t) { return s+t.amount; }, 0) / rollingWeeks) * 4.33;
+    return (recentIncomeTxs.reduce(function(s,t) { return s+t.amount; }, 0) / win.weeks) * 4.33;
   }
   // Fall back to budget estimate
   var incomeSec = S.budget.filter(function(s) { return s.name === "Income"; });
@@ -1978,15 +1989,13 @@ function renderBudget() {
   var cm = curMonth();
   var allTxs = S.txs.filter(function(t) { return mkey(t.date) === cm; });
 
-  // Rolling average income over last 8 weeks
-  var today = new Date(); today.setHours(0,0,0,0);
-  var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
+  // Rolling average income over last 8 weeks (capped at START_DATE, see rollingWindow())
+  var win = rollingWindow();
   var recentIncomeTxs = S.txs.filter(function(t) {
     var d = new Date(t.date);
-    return t.type === "credit" && t.category === "income" && !t.onceOff && d >= eightWeeksAgo && d <= today;
+    return t.type === "credit" && t.category === "income" && !t.onceOff && d >= win.start && d <= win.today;
   });
-  var rollingWeeks = Math.max(1, Math.ceil((today - eightWeeksAgo) / (1000*60*60*24*7)));
-  var rollingWeeklyIncome = recentIncomeTxs.reduce(function(s,t) { return s+t.amount; }, 0) / rollingWeeks;
+  var rollingWeeklyIncome = recentIncomeTxs.reduce(function(s,t) { return s+t.amount; }, 0) / win.weeks;
   var rollingMonthlyIncome = rollingWeeklyIncome * 4.33;
   var hasRollingData = recentIncomeTxs.length > 0;
 
@@ -2329,12 +2338,10 @@ function renderGoals() {
   var allocation = allocateGoalBalances();
 
   var avgWeeklySavings = (function() {
-    var today = new Date(); today.setHours(0,0,0,0);
-    var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
-    var inc = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "credit" && t.category === "income" && !t.onceOff && d >= eightWeeksAgo; }).reduce(function(s,t) { return s+t.amount; }, 0);
-    var spd = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "debit" && t.category !== "transfers" && d >= eightWeeksAgo; }).reduce(function(s,t) { return s+t.amount; }, 0);
-    var weeks = Math.max(1, Math.ceil((today - eightWeeksAgo) / (1000*60*60*24*7)));
-    return Math.max(0, (inc - spd) / weeks);
+    var win = rollingWindow();
+    var inc = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "credit" && t.category === "income" && !t.onceOff && d >= win.start; }).reduce(function(s,t) { return s+t.amount; }, 0);
+    var spd = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "debit" && t.category !== "transfers" && d >= win.start; }).reduce(function(s,t) { return s+t.amount; }, 0);
+    return Math.max(0, (inc - spd) / win.weeks);
   })();
 
   el.innerHTML = S.goals.map(function(g) {
@@ -2407,11 +2414,9 @@ function renderGoals() {
       var startBal = g.debtAccount ? Math.abs(S.startBalances[g.debtAccount] || bal) : bal;
       var paid = Math.max(0, startBal - bal);
       var pctPaid = startBal > 0 ? Math.min(100, (paid / startBal) * 100) : 0;
-      var today = new Date(); today.setHours(0,0,0,0);
-      var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
-      var repayTxs = S.txs.filter(function(t) { var d = new Date(t.date); return t.account === g.debtAccount && t.type === "credit" && d >= eightWeeksAgo; });
-      var weeks8 = Math.max(1, Math.ceil((today - eightWeeksAgo) / (1000*60*60*24*7)));
-      var avgWeeklyRepay = repayTxs.reduce(function(s,t) { return s+t.amount; }, 0) / weeks8;
+      var debtWin = rollingWindow();
+      var repayTxs = S.txs.filter(function(t) { var d = new Date(t.date); return t.account === g.debtAccount && t.type === "credit" && d >= debtWin.start; });
+      var avgWeeklyRepay = repayTxs.reduce(function(s,t) { return s+t.amount; }, 0) / debtWin.weeks;
       var extraWeekly = g.extraWeekly || 0;
       var totalWeekly = avgWeeklyRepay + extraWeekly;
       var weeksToPayoff = totalWeekly > 0 ? bal / totalWeekly : null;
@@ -3885,7 +3890,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v9";',
+    'var CACHE = "ledger-v10";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
