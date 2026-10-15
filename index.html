@@ -833,7 +833,8 @@ var DEFAULT_START_BAL = {
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
-var APP_VERSION = "v12"; // bump this by one every time an edited index.html is shipped
+var WPM = 52 / 12; // weeks per month, used for EVERY weekly<->monthly conversion so round-trips are exact
+var APP_VERSION = "v13"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -894,7 +895,9 @@ function save() {
     localStorage.setItem("ldg-cl", JSON.stringify(S.creditLimits));
     if (S.dashWidgets) localStorage.setItem("ldg-dw", JSON.stringify(S.dashWidgets));
     if (S.instalments) localStorage.setItem("ldg-inst", JSON.stringify(S.instalments));
-  } catch(e) {}
+  } catch(e) {
+    setStatus("Couldn't save to this device (" + (e && e.name || "storage error") + "). Changes may be lost when you close the app.", "err");
+  }
 }
 
 function resetData() {
@@ -923,11 +926,11 @@ function mkey(d) {
 }
 function wkey(d) {
   if (!d) return "Unknown";
-  var dt = new Date(d);
+  var dt = pd(d);
   if (isNaN(dt)) return "Unknown";
   var mon = new Date(dt);
-  mon.setDate(dt.getDate() - dt.getDay() + 1);
-  return mon.toISOString().slice(0,10);
+  mon.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); // Monday-based; Sunday belongs to the week that just ended
+  return dateStr(mon);
 }
 function months() {
   var seen = {};
@@ -941,8 +944,8 @@ function weeks() {
   S.txs.forEach(function(t) { var w = wkey(t.date); if (w !== "Unknown" && !seen[w]) { seen[w] = true; result.push(w); } });
   return result.sort();
 }
-function curMonth() { var ms = months(); return S.month || ms[ms.length-1] || mkey(new Date().toISOString()); }
-function curWeek() { var ws = weeks(); return S.week || ws[ws.length-1] || wkey(new Date().toISOString()); }
+function curMonth() { var ms = months(); return S.month || ms[ms.length-1] || mkey(dateStr(new Date())); }
+function curWeek() { var ws = weeks(); return S.week || ws[ws.length-1] || wkey(dateStr(new Date())); }
 
 function periodTxs(acct) {
   var txs;
@@ -1019,7 +1022,7 @@ function openCatModal(catId, catLabel, catColor) {
   document.getElementById("modal-total-label").textContent = "Net spend";
   document.getElementById("modal-total-val").style.color = catColor;
   document.getElementById("modal-total-val").textContent = fmt(netTotal);
-  var allTxs = debitList.concat(creditList).sort(function(a,b) { return new Date(b.date) - new Date(a.date); });
+  var allTxs = debitList.concat(creditList).sort(function(a,b) { return pd(b.date) - pd(a.date); });
   var summaryHtml = "";
   if (totalCredits > 0) {
     summaryHtml = '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">' +
@@ -1061,7 +1064,7 @@ function openMetricModal(type) {
   document.getElementById("modal-total-label").textContent = type === "spend" ? "Total spent" : "Total received";
   document.getElementById("modal-total-val").style.color = color;
   document.getElementById("modal-total-val").textContent = fmt(total);
-  var sorted = txList.slice().sort(function(a,b) { return new Date(b.date) - new Date(a.date); });
+  var sorted = txList.slice().sort(function(a,b) { return pd(b.date) - pd(a.date); });
   document.getElementById("modal-list").innerHTML = sorted.length ? sorted.map(function(tx) {
     return '<div class="modal-tx"><div class="modal-tx-left"><div class="modal-tx-desc">' + tx.description + (tx.onceOff ? '<span class="once-off-badge">once-off</span>' : "") + '</div><div class="modal-tx-meta">' + tx.date + (tx.account ? " · " + tx.account : "") + " · " + getCat(tx.category).label + '</div></div><div class="modal-tx-amt" style="color:' + (tx.type === "credit" ? "var(--green)" : "var(--red)") + '">' + (tx.type === "credit" ? "+" : "-") + fmt(tx.amount) + '</div></div>';
   }).join("") : '<div class="empty">No transactions</div>';
@@ -1246,7 +1249,7 @@ function finishImportMulti(txs, accounts, source) {
     if (tx.amount < 100) return;
     var existing = getInstalments().filter(function(i) {
       return Math.abs(i.totalAmount - tx.amount) < 0.01 &&
-        Math.abs(new Date(i.purchaseDate) - new Date(tx.date)) < 86400000 * 3;
+        Math.abs(pd(i.purchaseDate) - pd(tx.date)) < 86400000 * 3;
     });
     if (existing.length) return;
     var provider = isStepPay ? "steppay" : "paypal";
@@ -1277,7 +1280,10 @@ function finishImportMulti(txs, accounts, source) {
   var accountLabel = accounts.length === 1 ? accounts[0] : accounts.length + " accounts";
   var msg = "Added " + txs.length + " transaction" + (txs.length !== 1 ? "s" : "") + " across " + accountLabel;
   if (autoPlans.length) msg += " · 💳 Instalment plan created for " + autoPlans.join(", ");
-  setStatus(msg, "ok");
+  // Balances only count transactions from START_DATE onward, so earlier ones would import but change nothing
+  var tooOld = txs.filter(function(t) { return t.date < START_DATE; }).length;
+  if (tooOld) msg += " · ⚠️ " + tooOld + " dated before " + START_DATE + " won't affect balances";
+  setStatus(msg, tooOld ? "err" : "ok");
   if (source !== 'dash') swDrop("dash", "Dashboard");
 }
 
@@ -1311,7 +1317,7 @@ function importDataFrom(source) {
         id: Date.now() + "-" + Math.random().toString(36).slice(2) + "-" + i,
         description: t.description || "Unknown",
         amount: parseFloat(t.amount) || 0,
-        date: t.date || new Date().toISOString().slice(0,10),
+        date: t.date || dateStr(new Date()),
         type: t.type === "credit" ? "credit" : "debit",
         category: importedCat,
         account: account
@@ -1473,7 +1479,7 @@ function render() {
       var owing = isDebt ? Math.abs(bal) : 0;
       var creditLimit = S.creditLimits[a] || 0;
       var available = (isDebt && creditLimit > 0) ? Math.max(0, creditLimit - owing) : null;
-      var recent = aTxs.slice().sort(function(x,y) { return new Date(y.date)-new Date(x.date); }).slice(0,4);
+      var recent = aTxs.slice().sort(function(x,y) { return pd(y.date)-pd(x.date); }).slice(0,4);
       var sbId = "sb-" + a.replace(/\s/g,"_");
       var sbVal = (S.startBalances[a] !== undefined ? S.startBalances[a] : 0).toFixed(2);
       return (function() {
@@ -1496,7 +1502,7 @@ function render() {
           '</div>' +
           '<div id="acct-detail-' + safeId + '" style="display:' + (isOpen ? "block" : "none") + '">' +
           (function() {
-            var allAcctTxs = S.txs.filter(function(t) { return t.account === a; }).sort(function(x,y) { return new Date(y.date)-new Date(x.date); });
+            var allAcctTxs = S.txs.filter(function(t) { return t.account === a; }).sort(function(x,y) { return pd(y.date)-pd(x.date); });
             if (!allAcctTxs.length) return '';
             // Group by date
             var byDay = {}; var dayOrder = [];
@@ -1531,7 +1537,7 @@ function render() {
       var maCredits = maTxs.filter(function(t) { return t.type === "credit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
       var maDebits = maTxs.filter(function(t) { return t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
       var maBal = (ma.balance || 0) + maCredits - maDebits;
-      var recentMa = maTxs.slice().sort(function(x,y) { return new Date(y.date)-new Date(x.date); }).slice(0,4);
+      var recentMa = maTxs.slice().sort(function(x,y) { return pd(y.date)-pd(x.date); }).slice(0,4);
       var isOpenMa = S.acctExpanded[ma.name] || false;
       var safeNameMa = ma.name.replace(/\s/g,"_").replace(/[^a-zA-Z0-9_]/g,"");
       return '<div class="acct-card" style="border-color:rgba(124,106,247,0.25)">' +
@@ -1544,7 +1550,7 @@ function render() {
         '<div id="acct-detail-' + safeNameMa + '" style="display:' + (isOpenMa ? "block" : "none") + '">' +
         (function() {
           if (!maTxs.length) return '';
-          var sorted = maTxs.slice().sort(function(x,y) { return new Date(y.date)-new Date(x.date); });
+          var sorted = maTxs.slice().sort(function(x,y) { return pd(y.date)-pd(x.date); });
           var byDay = {}; var dayOrder = [];
           sorted.forEach(function(tx) { if (!byDay[tx.date]) { byDay[tx.date] = []; dayOrder.push(tx.date); } byDay[tx.date].push(tx); });
           var html = '<div class="acct-recent-label" style="margin-top:12px">Transactions</div><div style="max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;">';
@@ -1672,7 +1678,7 @@ function render() {
       var newCharges = debtTxs.filter(function(t) { return t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
       var totalDebt = Math.abs(Math.min(0, startBal)) + newCharges;
       var paidPct = totalDebt > 0 ? Math.min(100, (paid/totalDebt)*100) : 0;
-      var nextPay = S.txs.filter(function(t) { return t.account === a && new Date(t.date) > today2 && t.type === "debit"; }).sort(function(x,y) { return new Date(x.date)-new Date(y.date); }).slice(0,2);
+      var nextPay = S.txs.filter(function(t) { return t.account === a && pd(t.date) > today2 && t.type === "debit"; }).sort(function(x,y) { return pd(x.date)-pd(y.date); }).slice(0,2);
       return '<div class="debt-card"><div class="debt-header"><div class="debt-name">' + a + '</div><div class="debt-badge">Debt</div></div><div class="debt-stats"><div class="debt-stat"><div class="debt-stat-label">Owing</div><div class="debt-stat-val" style="color:var(--red)">$' + Math.abs(bal).toFixed(2) + '</div></div><div class="debt-stat"><div class="debt-stat-label">Original</div><div class="debt-stat-val">$' + totalDebt.toFixed(2) + '</div></div><div class="debt-stat"><div class="debt-stat-label">Paid</div><div class="debt-stat-val" style="color:var(--green)">$' + paid.toFixed(2) + '</div></div></div><div class="debt-bar-wrap"><div class="debt-bar-label"><span>Paid off</span><span>' + paidPct.toFixed(0) + '%</span></div><div class="debt-bar-track"><div class="debt-bar-fill" style="width:' + paidPct.toFixed(1) + '%"></div></div></div>' + (nextPay.length ? '<div class="debt-next">Next: ' + nextPay.map(function(t) { return t.description + ' -$' + t.amount.toFixed(2) + ' on ' + t.date; }).join(" · ") + '</div>' : "") + '</div>';
     }).join("");
   }
@@ -1700,7 +1706,7 @@ function render() {
 
   // Apply category filter
   var filteredTx = S.catFilter === "all" ? filt : filt.filter(function(t) { return t.category === S.catFilter; });
-  var sortedTx = filteredTx.slice().sort(function(a,b) { return new Date(b.date)-new Date(a.date); });
+  var sortedTx = filteredTx.slice().sort(function(a,b) { return pd(b.date)-pd(a.date); });
   // Tx list — grouped by day, collapsible
   var txList = document.getElementById("tx-list");
   if (!sortedTx.length) { txList.innerHTML = '<div class="empty">No transactions for this period</div>'; }
@@ -1789,14 +1795,14 @@ function renderPieAndUpcoming(spendTxs, totalSpend) {
 
   // Upcoming
   var today = new Date(); today.setHours(0,0,0,0);
-  var upcoming = S.txs.filter(function(t) { return new Date(t.date) > today && t.type === "debit"; }).sort(function(a,b) { return new Date(a.date)-new Date(b.date); }).slice(0,6);
+  var upcoming = S.txs.filter(function(t) { return pd(t.date) > today && t.type === "debit"; }).sort(function(a,b) { return pd(a.date)-pd(b.date); }).slice(0,6);
   var upCard = document.getElementById("upcoming-card");
   if (upCard) {
     if (upcoming.length) {
       upCard.style.display = "block";
       var upList = document.getElementById("upcoming-list");
       if (upList) upList.innerHTML = upcoming.map(function(t) {
-        var diff = Math.ceil((new Date(t.date) - today) / (1000*60*60*24));
+        var diff = Math.ceil((pd(t.date) - today) / (1000*60*60*24));
         return '<div class="upcoming-item"><div><div class="upcoming-desc">' + t.description + '</div><div class="upcoming-sub">' + t.date + ' · in ' + diff + ' day' + (diff !== 1 ? "s" : "") + ' · ' + t.account + '</div></div><div class="upcoming-amt">-' + fmt(t.amount) + '</div></div>';
       }).join("");
     } else { upCard.style.display = "none"; }
@@ -1927,11 +1933,11 @@ function rollingWindow() {
 function getEffectiveMonthlyIncome() {
   var win = rollingWindow();
   var recentIncomeTxs = S.txs.filter(function(t) {
-    var d = new Date(t.date);
+    var d = pd(t.date);
     return t.type === "credit" && t.category === "income" && !t.onceOff && d >= win.start && d <= win.today;
   });
   if (recentIncomeTxs.length > 0) {
-    return (recentIncomeTxs.reduce(function(s,t) { return s+t.amount; }, 0) / win.weeks) * 4.33;
+    return (recentIncomeTxs.reduce(function(s,t) { return s+t.amount; }, 0) / win.weeks) * WPM;
   }
   // Fall back to budget estimate
   var incomeSec = S.budget.filter(function(s) { return s.name === "Income"; });
@@ -1942,7 +1948,12 @@ function itemMonthly(item, useLinked) {
   if (item.isPct) {
     return getEffectiveMonthlyIncome() * (item.amount / 100);
   }
-  return item.freq * item.amount;
+  var f = parseFloat(item.freq);
+  if (f === 4) return item.amount * WPM;        // weekly
+  if (f === 2) return item.amount * WPM / 2;    // fortnightly
+  if (f === 0.33) return item.amount / 3;       // quarterly
+  if (f === 12) return item.amount / 12;        // "Yearly÷12": amount is the yearly total
+  return f * item.amount;                       // monthly
 }
 function itemWeekly(item, useLinked) {
   // Frequency-aware: a "Weekly" item's /wk figure is exactly what was typed,
@@ -1951,7 +1962,7 @@ function itemWeekly(item, useLinked) {
     if (item.freq === 4) return item.amount;           // Weekly
     if (item.freq === 2) return item.amount / 2;        // Fortnightly
   }
-  return itemMonthly(item, useLinked) / 4.33;
+  return itemMonthly(item, useLinked) / WPM;
 }
 function sectionMonthly(section, useLinked) {
   return section.items.reduce(function(s, i) { return s + itemMonthly(i, useLinked); }, 0);
@@ -1992,11 +2003,11 @@ function renderBudget() {
   // Rolling average income over last 8 weeks (capped at START_DATE, see rollingWindow())
   var win = rollingWindow();
   var recentIncomeTxs = S.txs.filter(function(t) {
-    var d = new Date(t.date);
+    var d = pd(t.date);
     return t.type === "credit" && t.category === "income" && !t.onceOff && d >= win.start && d <= win.today;
   });
   var rollingWeeklyIncome = recentIncomeTxs.reduce(function(s,t) { return s+t.amount; }, 0) / win.weeks;
-  var rollingMonthlyIncome = rollingWeeklyIncome * 4.33;
+  var rollingMonthlyIncome = rollingWeeklyIncome * WPM;
   var hasRollingData = recentIncomeTxs.length > 0;
 
   // Summary card
@@ -2018,13 +2029,13 @@ function renderBudget() {
     rollingRow +
     '<div class="budget-vs-row"><span class="budget-vs-label">Budget expenses</span><div class="budget-vs-vals"><span class="budget-vs-actual" style="color:var(--red)">$' + budgetExpenses.toFixed(2) + '/mo</span></div></div>' +
     '<div class="budget-vs-row"><span class="budget-vs-label">Actual spent this month</span><div class="budget-vs-vals"><span class="budget-vs-actual" style="color:var(--red)">$' + actualSpend.toFixed(2) + '</span></div></div>' +
-    '<div class="budget-vs-row" style="border:none"><span class="budget-vs-label" style="font-weight:600;color:var(--text)">Projected savings</span><div class="budget-vs-vals"><span class="budget-vs-actual" style="color:' + (effectiveSavings >= 0 ? "var(--green)" : "var(--red)") + '">$' + effectiveSavings.toFixed(2) + '/mo</span><span style="font-size:11px;color:var(--muted)">$' + (effectiveSavings / 4.33).toFixed(2) + '/wk</span></div></div>';
+    '<div class="budget-vs-row" style="border:none"><span class="budget-vs-label" style="font-weight:600;color:var(--text)">Projected savings</span><div class="budget-vs-vals"><span class="budget-vs-actual" style="color:' + (effectiveSavings >= 0 ? "var(--green)" : "var(--red)") + '">$' + effectiveSavings.toFixed(2) + '/mo</span><span style="font-size:11px;color:var(--muted)">$' + (effectiveSavings / WPM).toFixed(2) + '/wk</span></div></div>';
 
   // Sections
   var html = "";
   S.budget.forEach(function(sec, si) {
     var secTotal = sectionMonthly(sec);
-    var secWeekly = secTotal / 4;
+    var secWeekly = sectionWeekly(sec);
     var itemsHtml = sec.items.map(function(item, ii) {
       var isPct = item.isPct || false;
       var freqOpts = [
@@ -2339,8 +2350,8 @@ function renderGoals() {
 
   var avgWeeklySavings = (function() {
     var win = rollingWindow();
-    var inc = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "credit" && t.category === "income" && !t.onceOff && d >= win.start; }).reduce(function(s,t) { return s+t.amount; }, 0);
-    var spd = S.txs.filter(function(t) { var d = new Date(t.date); return t.type === "debit" && t.category !== "transfers" && d >= win.start; }).reduce(function(s,t) { return s+t.amount; }, 0);
+    var inc = S.txs.filter(function(t) { var d = pd(t.date); return t.type === "credit" && t.category === "income" && !t.onceOff && d >= win.start; }).reduce(function(s,t) { return s+t.amount; }, 0);
+    var spd = S.txs.filter(function(t) { var d = pd(t.date); return t.type === "debit" && t.category !== "transfers" && d >= win.start; }).reduce(function(s,t) { return s+t.amount; }, 0);
     return Math.max(0, (inc - spd) / win.weeks);
   })();
 
@@ -2415,7 +2426,7 @@ function renderGoals() {
       var paid = Math.max(0, startBal - bal);
       var pctPaid = startBal > 0 ? Math.min(100, (paid / startBal) * 100) : 0;
       var debtWin = rollingWindow();
-      var repayTxs = S.txs.filter(function(t) { var d = new Date(t.date); return t.account === g.debtAccount && t.type === "credit" && d >= debtWin.start; });
+      var repayTxs = S.txs.filter(function(t) { var d = pd(t.date); return t.account === g.debtAccount && t.type === "credit" && d >= debtWin.start; });
       var avgWeeklyRepay = repayTxs.reduce(function(s,t) { return s+t.amount; }, 0) / debtWin.weeks;
       var extraWeekly = g.extraWeekly || 0;
       var totalWeekly = avgWeeklyRepay + extraWeekly;
@@ -2450,7 +2461,6 @@ function loadGoals() {
   try { var g = localStorage.getItem("ldg-goals"); if (g) return JSON.parse(g); } catch(e) {}
   return [];
 }
-function saveGoals() { localStorage.setItem("ldg-goals", JSON.stringify(S.goals)); }
 
 function setGoalType(type) {
   goalType = type;
@@ -2501,7 +2511,7 @@ function checkPayday() {
     return salaryKeywords.some(function(kw) { return desc.indexOf(kw) !== -1; });
   });
   if (!incomeTxs.length) return;
-  var latest = incomeTxs.sort(function(a,b) { return new Date(b.date)-new Date(a.date); })[0];
+  var latest = incomeTxs.sort(function(a,b) { return pd(b.date)-pd(a.date); })[0];
   if (!latest) return;
   var key = latest.id;
   if (S.lastSeenPayday === key) return;
@@ -2512,7 +2522,7 @@ function checkPayday() {
   var rows = "";
   var totalAllocated = 0;
   expSecs.forEach(function(sec) {
-    var weeklyAmt = sectionMonthly(sec) / 4.33;
+    var weeklyAmt = sectionMonthly(sec) / WPM;
     if (weeklyAmt > 0) {
       rows += '<div class="payday-row"><span class="payday-label">' + sec.name + '</span><span class="payday-amt">$' + weeklyAmt.toFixed(2) + '</span></div>';
       totalAllocated += weeklyAmt;
@@ -2583,7 +2593,7 @@ function renderRecurringAlerts() {
   // Count occurrences per description in last 90 days
   var counts = {};
   S.txs.forEach(function(t) {
-    var d = new Date(t.date);
+    var d = pd(t.date);
     if (t.type !== "debit" || d < ninetyDaysAgo || t.category === "transfers") return;
     var key = t.description.toLowerCase().slice(0, 30);
     if (!counts[key]) counts[key] = { desc: t.description, dates: [], cat: t.category };
@@ -2688,7 +2698,7 @@ function renderCalendar() {
 
   var weeksHtml = weeks.map(function(week) {
     return '<div class="cal-week">' + week.map(function(cell) {
-      var isToday = cell.dateStr && new Date(cell.dateStr).toDateString() === today.toDateString();
+      var isToday = cell.dateStr && pd(cell.dateStr).toDateString() === today.toDateString();
       var isSelected = cell.dateStr && cell.dateStr === S.calSelectedDay;
       var txs = cell.dateStr ? (dayMap[cell.dateStr] || []) : [];
       var realTxs = txs.filter(function(t) { return !t.isCalEvent; });
@@ -2702,7 +2712,7 @@ function renderCalendar() {
       if (debits.length) dots += '<span class="cal-dot" style="background:var(--red)"></span>';
       if (credits.length) dots += '<span class="cal-dot" style="background:var(--green)"></span>';
       if (calEvs.length) dots += '<span class="cal-dot" style="background:var(--accent)"></span>';
-      var isFuture = cell.dateStr && new Date(cell.dateStr) > today;
+      var isFuture = cell.dateStr && pd(cell.dateStr) > today;
       var amtStr = "";
       if (totalOut > 0) amtStr += '<div class="cal-amt" style="color:var(--red)">-$' + totalOut.toFixed(0) + '</div>';
       if (totalIn > 0) amtStr += '<div class="cal-amt" style="color:var(--green)">+$' + totalIn.toFixed(0) + '</div>';
@@ -2724,7 +2734,7 @@ function renderCalendar() {
   var moTxs = S.txs.filter(function(t) { return t.date && t.date.slice(0,7) === moStr; });
   var moSpend = moTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
   var moIncome = moTxs.filter(function(t) { return t.type === "credit" && t.category === "income"; }).reduce(function(s,t) { return s+t.amount; }, 0);
-  var moUpcoming = moTxs.filter(function(t) { return new Date(t.date) > today && t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+  var moUpcoming = moTxs.filter(function(t) { return pd(t.date) > today && t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
   document.getElementById("cal-month-summary").innerHTML =
     '<div class="cal-summary-row"><span style="font-size:13px;color:var(--muted)">Income</span><span style="font-size:13px;font-weight:600;color:var(--green)">+$' + moIncome.toFixed(2) + '</span></div>' +
     '<div class="cal-summary-row"><span style="font-size:13px;color:var(--muted)">Spent</span><span style="font-size:13px;font-weight:600;color:var(--red)">-$' + moSpend.toFixed(2) + '</span></div>' +
@@ -2996,7 +3006,7 @@ function openManualTxModal(acctName) {
   document.getElementById("manual-tx-subtitle").textContent = acctName;
   document.getElementById("manual-tx-amount").value = "";
   document.getElementById("manual-tx-desc").value = "";
-  document.getElementById("manual-tx-date").value = new Date().toISOString().slice(0,10);
+  document.getElementById("manual-tx-date").value = dateStr(new Date());
   var catSel = document.getElementById("manual-tx-cat");
   catSel.innerHTML = S.cats.map(function(c) { return '<option value="' + c.id + '">' + c.label + '</option>'; }).join("");
   catSel.value = "income";
@@ -3014,7 +3024,7 @@ function closeManualTxOutside(e) { if (e.target === document.getElementById("man
 function saveManualTx() {
   var amount = parseFloat(document.getElementById("manual-tx-amount").value) || 0;
   var desc = document.getElementById("manual-tx-desc").value.trim() || (manualTxType === "credit" ? "Cash in" : "Cash out");
-  var date = document.getElementById("manual-tx-date").value || new Date().toISOString().slice(0,10);
+  var date = document.getElementById("manual-tx-date").value || dateStr(new Date());
   var cat = document.getElementById("manual-tx-cat").value;
   if (amount <= 0) { alert("Please enter an amount"); return; }
   var tx = {
@@ -3057,7 +3067,14 @@ function getCurrentWeekBounds() {
   var mon = new Date(tue); mon.setDate(tue.getDate() + 6);
   return { start: tue, end: mon };
 }
-function dateStr(d) { return d.toISOString().slice(0,10); }
+// Local-calendar date helpers. toISOString() converts to UTC, which in Melbourne
+// (UTC+10/11) turns local midnight into the PREVIOUS day, and new Date("YYYY-MM-DD")
+// parses as UTC midnight (= 10-11am local), so "today" comparisons were off by a day.
+function dateStr(d) {
+  var m = d.getMonth() + 1, day = d.getDate();
+  return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+}
+function pd(s) { return new Date(String(s).slice(0,10) + "T00:00:00"); }
 
 function renderWeeklyTracker() {
   var bounds = getCurrentWeekBounds();
@@ -3092,12 +3109,12 @@ function renderWeeklyTracker() {
     S.budget.forEach(function(sec) {
       sec.items.forEach(function(item) {
         if (item.linkedCategory === cat.id) {
-          weeklyBudget += itemMonthly(item) / 4.33;
+          weeklyBudget += itemMonthly(item) / WPM;
         } else if (!item.linkedCategory) {
           var itemLabel = item.name.toLowerCase();
           var catLabel = cat.label.toLowerCase();
           if (itemLabel.indexOf(catLabel) !== -1 || catLabel.indexOf(itemLabel) !== -1) {
-            weeklyBudget += itemMonthly(item) / 4.33;
+            weeklyBudget += itemMonthly(item) / WPM;
           }
         }
       });
@@ -3130,7 +3147,7 @@ function renderWeeklyTracker() {
     var claimedWk = Math.min(remainingWk, item.weeklyTarget);
     acctRemainingWk[item.account] = Math.max(0, remainingWk - claimedWk);
 
-    var monthlyTarget = item.weeklyTarget * 4.33;
+    var monthlyTarget = item.weeklyTarget * WPM;
     var remainingMo = acctRemainingMo[item.account] || 0;
     var claimedMo = Math.min(remainingMo, monthlyTarget);
     acctRemainingMo[item.account] = Math.max(0, remainingMo - claimedMo);
@@ -3178,12 +3195,12 @@ function renderWeeklyTracker() {
       '<button onclick="setSavingsView(\'monthly\')" style="font-size:11px;padding:3px 10px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;background:' + (S.savingsView === 'monthly' ? 'var(--accent)' : 'transparent') + ';color:' + (S.savingsView === 'monthly' ? '#fff' : 'var(--muted)') + '">Month</button>' +
       '</div></div>';
     var totalSaved = savingsRows.reduce(function(s,r) { return s + (S.savingsView === 'monthly' ? r.savedMonthly : r.saved); }, 0);
-    var totalTarget = savingsRows.reduce(function(s,r) { return s + (S.savingsView === 'monthly' ? r.target * 4.33 : r.target); }, 0);
+    var totalTarget = savingsRows.reduce(function(s,r) { return s + (S.savingsView === 'monthly' ? r.target * WPM : r.target); }, 0);
     var totalPct = totalTarget > 0 ? Math.min(100, (totalSaved / totalTarget) * 100) : 0;
     var totalBarColor = totalPct >= 100 ? "var(--green)" : totalPct >= 60 ? "#e8c44a" : "var(--accent)";
     var totalLabel = S.savingsView === 'monthly' ? '/mo' : '/wk';
     html += savingsRows.map(function(row) {
-      var target = S.savingsView === 'monthly' ? row.target * 4.33 : row.target;
+      var target = S.savingsView === 'monthly' ? row.target * WPM : row.target;
       var saved = S.savingsView === 'monthly' ? row.savedMonthly : row.saved;
       var pct = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
       var barColor = pct >= 100 ? "var(--green)" : pct >= 60 ? "#e8c44a" : "var(--accent)";
@@ -3217,7 +3234,7 @@ function renderWeeklyTracker() {
   // Update header summary
   var totalSpentWeek = spendRows.reduce(function(s,r) { return s+r.spent; }, 0);
   var avgSavePct = savingsRows.length ? Math.round(savingsRows.reduce(function(s,r) {
-    var target = S.savingsView === 'monthly' ? r.target * 4.33 : r.target;
+    var target = S.savingsView === 'monthly' ? r.target * WPM : r.target;
     var saved = S.savingsView === 'monthly' ? r.savedMonthly : r.saved;
     return s + (target > 0 ? Math.min(100,(saved/target)*100) : 0);
   }, 0) / savingsRows.length) : null;
@@ -3247,7 +3264,7 @@ function getLinkedItems() {
       if (!item.linkedAccount) return;
       var monthlyTarget = itemMonthly(item);
       if (monthlyTarget <= 0) return;
-      items.push({ key: sec.name + "||" + item.name, label: item.name, account: item.linkedAccount, weeklyTarget: monthlyTarget / 4.33 });
+      items.push({ key: sec.name + "||" + item.name, label: item.name, account: item.linkedAccount, weeklyTarget: monthlyTarget / WPM });
     });
   });
   // Apply saved priority order
@@ -3516,7 +3533,7 @@ function renderDashWidgets() {
       '</div>';
 
     } else if (id === 'recent-txs') {
-      var recent = (S.txs || []).slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,5);
+      var recent = (S.txs || []).slice().sort(function(a,b){return pd(b.date)-pd(a.date);}).slice(0,5);
       var txHtml = recent.map(function(t) {
         return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border)">' +
           '<div style="overflow:hidden;flex:1">' +
@@ -3703,11 +3720,11 @@ function renderBudgetActuals() {
     S.budget.forEach(function(sec) {
       sec.items.forEach(function(item) {
         if (item.linkedCategory === cat.id) {
-          budget += itemMonthly(item) / 4.33;
+          budget += itemMonthly(item) / WPM;
         } else if (!item.linkedCategory) {
           // Fallback to name fuzzy match only if no linkedCategory set
           var il = item.name.toLowerCase(); var cl = cat.label.toLowerCase();
-          if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / 4.33;
+          if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / WPM;
         }
       });
     });
@@ -3783,7 +3800,7 @@ function renderWeekHistoryModal() {
     S.budget.forEach(function(sec) {
       sec.items.forEach(function(item) {
         var il = item.name.toLowerCase(); var cl = cat.label.toLowerCase();
-        if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / 4.33;
+        if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / WPM;
       });
     });
     catRows.push({ cat: cat, spent: spend[cat.id], budget: budget });
@@ -3890,7 +3907,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v10";',
+    'var CACHE = "ledger-v11";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
