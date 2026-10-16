@@ -571,6 +571,21 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
       </div>
       <div class="card">
         <div class="card-label">Data</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Export range (leave blank for everything)</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input type="date" id="export-from" style="flex:1;min-width:0">
+          <input type="date" id="export-to" style="flex:1;min-width:0">
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="add-btn" style="flex:1" onclick="setExportRange('all')">All</button>
+          <button class="add-btn" style="flex:1" onclick="setExportRange('this')">This month</button>
+          <button class="add-btn" style="flex:1" onclick="setExportRange('last')">Last month</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button class="add-btn" style="flex:1" onclick="exportData('copy')">Copy data</button>
+          <button class="add-btn" style="flex:1" onclick="exportData('file')">Download file</button>
+        </div>
+        <textarea id="export-fallback" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-bottom:10px"></textarea>
         <button class="danger-btn" onclick="resetData()">Reset all data</button>
       </div>
       <div style="text-align:center;padding:16px 0 4px;font-size:11px;color:var(--muted)" id="app-version-footer"></div>
@@ -834,7 +849,7 @@ var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-06";
 var WPM = 52 / 12; // weeks per month, used for EVERY weekly<->monthly conversion so round-trips are exact
-var APP_VERSION = "v13"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v15"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -898,6 +913,71 @@ function save() {
   } catch(e) {
     setStatus("Couldn't save to this device (" + (e && e.name || "storage error") + "). Changes may be lost when you close the app.", "err");
   }
+}
+
+// Export everything stored on this device as one JSON snapshot (for analysis / backup)
+function buildExport() {
+  var keys = ["ldg-tx","ldg-ac","ldg-ct","ldg-sb","ldg-cl","ldg-budget","ldg-goals","ldg-inst","ldg-dw","ldg-maccts","ldg-calevents","ldg-wtargets","ldg-spriority"];
+  var data = {};
+  keys.forEach(function(k) {
+    try { var v = localStorage.getItem(k); if (v !== null) data[k] = JSON.parse(v); } catch(e) {}
+  });
+  var fromEl = document.getElementById("export-from"), toEl = document.getElementById("export-to");
+  var from = fromEl && fromEl.value || "", to = toEl && toEl.value || "";
+  var range = { from: from || null, to: to || null };
+  if (from || to) {
+    var all = data["ldg-tx"] || [];
+    // Balance of each account the day before the range starts, so the slice can still be analysed
+    if (from) {
+      var opening = {};
+      Object.keys(S.startBalances || {}).forEach(function(a) { opening[a] = S.startBalances[a]; });
+      all.forEach(function(t) {
+        if (t.date >= START_DATE && t.date < from) {
+          if (opening[t.account] === undefined) opening[t.account] = 0;
+          opening[t.account] += t.type === "credit" ? t.amount : -t.amount;
+        }
+      });
+      range.openingBalancesBeforeFrom = opening;
+    }
+    data["ldg-tx"] = all.filter(function(t) { return (!from || t.date >= from) && (!to || t.date <= to); });
+    range.transactionCount = data["ldg-tx"].length;
+    if (data["ldg-inst"]) data["ldg-inst"] = data["ldg-inst"].filter(function(i) { return (!from || i.purchaseDate >= from) && (!to || i.purchaseDate <= to); });
+  }
+  return JSON.stringify({ app: "Pocket Accountant", version: APP_VERSION, exportedAt: dateStr(new Date()), startDate: START_DATE, range: range, data: data }, null, 1);
+}
+function setExportRange(which) {
+  var f = document.getElementById("export-from"), t = document.getElementById("export-to");
+  var n = new Date(), y = n.getFullYear(), m = n.getMonth();
+  if (which === "all") { f.value = ""; t.value = ""; return; }
+  var first = which === "this" ? new Date(y, m, 1) : new Date(y, m - 1, 1);
+  var last = which === "this" ? new Date(y, m + 1, 0) : new Date(y, m, 0);
+  f.value = dateStr(first); t.value = dateStr(last);
+}
+function exportData(mode) {
+  var json = buildExport();
+  if (mode === "file") {
+    try {
+      var blob = new Blob([json], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; var fr = document.getElementById("export-from").value, to2 = document.getElementById("export-to").value;
+      a.download = "pocket-accountant-" + ((fr || to2) ? ((fr || "start") + "_to_" + (to2 || "now")) : dateStr(new Date())) + ".json";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+      setStatus("Downloaded. Attach the file to the chat for analysis.", "ok");
+      return;
+    } catch(e) { /* fall through to the copy box */ }
+  }
+  var showBox = function() {
+    var ta = document.getElementById("export-fallback");
+    ta.value = json; ta.style.display = "block"; ta.focus(); ta.select();
+    setStatus("Select all in the box and copy it manually.", "ok");
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json).then(function() {
+      setStatus("Copied " + Math.round(json.length / 1024) + " KB. Paste it into the chat.", "ok");
+    }, showBox);
+  } else { showBox(); }
 }
 
 function resetData() {
@@ -3907,7 +3987,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v11";',
+    'var CACHE = "ledger-v13";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
