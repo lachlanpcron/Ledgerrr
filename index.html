@@ -434,6 +434,7 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
           <button class="import-btn" onclick="importDataFrom('dash')" style="margin-top:10px">Import transactions</button>
         </div>
       </div>
+      <div id="app-version-dash" style="text-align:center;font-size:11px;color:var(--muted);padding:2px 0 10px"></div>
     </div>
 
     <!-- Customise Dashboard Modal -->
@@ -586,6 +587,11 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
           <button class="add-btn" style="flex:1" onclick="exportData('file')">Download file</button>
         </div>
         <textarea id="export-fallback" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-bottom:10px"></textarea>
+        <div style="font-size:12px;color:var(--muted);margin:4px 0 6px">Tidy up</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="add-btn" style="flex:1" onclick="matchInstalmentsNow()">Match instalments</button>
+          <button class="add-btn" style="flex:1" onclick="clearPendingLabels()">Clear PENDING labels</button>
+        </div>
         <button class="danger-btn" onclick="resetData()">Reset all data</button>
       </div>
       <div style="text-align:center;padding:16px 0 4px;font-size:11px;color:var(--muted)" id="app-version-footer"></div>
@@ -692,6 +698,7 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
           <option value="cash">Cash</option>
           <option value="savings">Savings</option>
           <option value="investment">Investment</option>
+          <option value="loan">Loan or debt</option>
           <option value="other">Other</option>
         </select>
       </div>
@@ -833,6 +840,7 @@ var PRESETS = [
   {id:"income",label:"Income",color:"#2d9e52"},
   {id:"transfers",label:"Transfers",color:"#555570"},
   {id:"fees",label:"Fees",color:"#e05555"},
+  {id:"shared",label:"Shared costs",color:"#c084fc"},
   {id:"savings",label:"Savings",color:"#f7c948"},
   {id:"opening-balance",label:"Opening Balance",color:"#444458"},
   {id:"uncategorised",label:"Uncategorised",color:"#555570"}
@@ -847,9 +855,9 @@ var DEFAULT_START_BAL = {
 };
 var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-var START_DATE = "2026-09-06";
+var START_DATE = "2026-09-15"; // first day with real data (earlier days only diluted the income average)
 var WPM = 52 / 12; // weeks per month, used for EVERY weekly<->monthly conversion so round-trips are exact
-var APP_VERSION = "v15"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v17"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -890,6 +898,9 @@ function loadData() {
   S.calEvents = loadCalEvents();
   S.manualAccts = loadManualAccts();
   S.weeklyTargets = loadWeeklyTargets();
+  ensurePresetCats();
+  try { runCleanup17(); } catch(e) {}
+  try { reconcileInstalments(); } catch(e) {}
   try { var sp = localStorage.getItem("ldg-spriority"); if (sp) S.savingsPriority = JSON.parse(sp); } catch(e) {}
   try { var lsp = localStorage.getItem("ldg-lsp"); if (lsp) S.lastSeenPayday = lsp; } catch(e) {}
   try {
@@ -899,6 +910,13 @@ function loadData() {
   } catch(e) { document.body.classList.add("light-mode"); }
   render();
   checkPayday();
+}
+
+// Older saves predate newer built-in categories (e.g. "shared"); add any that are missing.
+function ensurePresetCats() {
+  PRESETS.forEach(function(p) {
+    if (!S.cats.some(function(c) { return c.id === p.id; })) S.cats.push({ id: p.id, label: p.label, color: p.color });
+  });
 }
 
 function save() {
@@ -1008,9 +1026,9 @@ function wkey(d) {
   if (!d) return "Unknown";
   var dt = pd(d);
   if (isNaN(dt)) return "Unknown";
-  var mon = new Date(dt);
-  mon.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); // Monday-based; Sunday belongs to the week that just ended
-  return dateStr(mon);
+  var tue = new Date(dt);
+  tue.setDate(dt.getDate() - ((dt.getDay() + 5) % 7)); // pay weeks run Tuesday to Monday, same as the Budget tab
+  return dateStr(tue);
 }
 function months() {
   var seen = {};
@@ -1309,6 +1327,138 @@ function getInstalmentDates(provider, purchaseDateStr) {
   return dates;
 }
 
+// ── INSTALMENT RECONCILIATION ───────────────────────────────────
+// Plans are created with an estimated schedule (purchase + 7 days and so on), but
+// the real repayments show up in the bank data. Match each unpaid plan payment to
+// an actual repayment so the tracker reflects what has genuinely been paid.
+// Exact amounts are matched first across every plan (so a $26.20 payment can't be
+// claimed by a $26.19 repayment that belongs to an older plan); then a 2 cent
+// rounding tolerance within 10 days of the scheduled date.
+function instRepaymentCandidates(provider) {
+  return S.txs.filter(function(t) {
+    if (provider === "paypal") return t.type === "debit" && /payin4|pay in 4/i.test(t.description || "");
+    return t.account === "StepPay" && t.type === "credit" && /repay/i.test(t.description || "");
+  }).sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+}
+function reconcileInstalments() {
+  var plans = getInstalments();
+  if (!plans.length) return 0;
+  var used = {}, changed = 0;
+  plans.forEach(function(pl) { (pl.payments || []).forEach(function(p) { if (p.txId) used[p.txId] = true; }); });
+  var ordered = plans.slice().sort(function(a, b) { return a.purchaseDate < b.purchaseDate ? -1 : a.purchaseDate > b.purchaseDate ? 1 : 0; });
+  [0.005, 0.02].forEach(function(tol, pass) {
+    ordered.forEach(function(pl) {
+      var cands = instRepaymentCandidates(pl.provider);
+      (pl.payments || []).forEach(function(p) {
+        if (p.paid) return;
+        for (var i = 0; i < cands.length; i++) {
+          var c = cands[i];
+          if (used[c.id] || c.date < pl.purchaseDate) continue;
+          if (Math.abs(c.amount - p.amount) > tol + 0.0001) continue;
+          if (pass === 1 && Math.abs(pd(c.date) - pd(p.date)) > 10 * 86400000) continue;
+          used[c.id] = true; p.paid = true; p.paidOn = c.date; p.txId = c.id; changed++;
+          break;
+        }
+      });
+    });
+  });
+  if (changed) saveInstalments(plans);
+  return changed;
+}
+function matchInstalmentsNow() {
+  var n = reconcileInstalments();
+  render();
+  setStatus(n ? "Matched " + n + " instalment payment" + (n !== 1 ? "s" : "") + " to bank repayments" : "No new instalment payments to match", "ok");
+}
+
+// Strip the "PENDING:" prefix once transactions have posted. After this, importing the
+// posted version of the same transaction is caught by the duplicate check.
+function clearPendingLabels() {
+  var re = /^\s*PENDING:\s*/i;
+  var n = S.txs.filter(function(t) { return re.test(t.description || ""); }).length;
+  if (!n) { setStatus("No PENDING labels to clear", "ok"); return; }
+  if (!confirm("Remove the PENDING: label from " + n + " transaction" + (n !== 1 ? "s" : "") + "? Only do this once they have posted.")) return;
+  S.txs.forEach(function(t) { t.description = (t.description || "").replace(re, ""); });
+  (S.instalments || []).forEach(function(i) { i.description = (i.description || "").replace(re, ""); });
+  save(); saveInstalments(S.instalments || []); render();
+  setStatus("Cleared the PENDING label from " + n + " transaction" + (n !== 1 ? "s" : ""), "ok");
+}
+
+// ── ONE TIME TIDY UP (v17) ──────────────────────────────────────
+// Runs once per device. Flags the once off items from the move and ticket resale,
+// splits the combined PayPal retry, moves Robyn settle ups to "Shared costs", records
+// Mum's loan as a liability and points the Emergency fund goal at the account that
+// actually holds the money. Everything is matched on date, amount and description, so
+// on a device without these transactions it does nothing. A backup copy of the
+// transactions is stored first under "ldg-tx-bak-v17".
+function runCleanup17() {
+  var done = null;
+  try { done = localStorage.getItem("ldg-mig17"); } catch(e) {}
+  if (done) return;
+  if (!S.txs.length) { try { localStorage.setItem("ldg-mig17", "1"); } catch(e) {} return; }
+  try { localStorage.setItem("ldg-tx-bak-v17", JSON.stringify(S.txs)); } catch(e) { return; } // no backup, no changes
+  var counts = { flagged: 0, split: 0, shared: 0, loan: 0, goal: 0 };
+  function find(date, amount, type, text) {
+    return S.txs.filter(function(t) {
+      return t.date === date && Math.abs(t.amount - amount) < 0.005 && t.type === type &&
+        (!text || (t.description || "").toLowerCase().indexOf(text) !== -1);
+    });
+  }
+  function flag(date, amount, type, text) {
+    find(date, amount, type, text).forEach(function(t) { if (!t.onceOff) { t.onceOff = true; counts.flagged++; } });
+  }
+  flag("2026-10-01", 727.48, "credit", "rent refund");
+  flag("2026-10-01", 275, "debit", "rent refund");
+  flag("2026-09-25", 349.05, "debit", "noah kahan");
+  flag("2026-10-02", 352.12, "credit", "ticket resale");
+  flag("2026-09-30", 69, "debit", "residential tenancies");
+  flag("2026-10-01", 77.77, "debit", "australia post");
+
+  // The $79.84 PayPal retry covered a Domino's order and an Uber ride
+  find("2026-09-30", 79.84, "debit", "domino").forEach(function(t) {
+    var i = S.txs.indexOf(t);
+    var a = Object.assign({}, t, { id: t.id + "-a", amount: 59.57, category: "dining", description: "Direct Debit 617708 PayPal Australia (Domino's retry)" });
+    var b = Object.assign({}, t, { id: t.id + "-b", amount: 20.27, category: "transport", description: "Direct Debit 617708 PayPal Australia (Uber retry)" });
+    S.txs.splice(i, 1, a, b);
+    counts.split++;
+  });
+
+  // Settle ups with Robyn net off against each other instead of sitting as uncategorised credits
+  S.txs.forEach(function(t) {
+    var d = (t.description || "").toLowerCase();
+    if (d.indexOf("robyn") === -1 || t.onceOff || t.category === "shared") return;
+    if (t.type === "credit" && t.category === "uncategorised") { t.category = "shared"; counts.shared++; }
+    else if (t.type === "debit" && d.indexOf("transfer to robyn") !== -1) { t.category = "shared"; counts.shared++; }
+  });
+
+  // Mum's $2,000 loan: not income, and a liability until it is repaid
+  find("2026-09-23", 2000, "credit", "mum to lachie").forEach(function(t) {
+    t.category = "transfers";
+    if (!(S.manualAccts || []).some(function(a) { return a.name === "Loan from Mum"; })) {
+      S.manualAccts = (S.manualAccts || []).concat([{ name: "Loan from Mum", balance: -2000, type: "loan" }]);
+      saveManualAccts();
+      counts.loan++;
+    }
+  });
+
+  (S.goals || []).forEach(function(g) {
+    if (g.type === "savings" && g.name === "Emergency fund" && g.savingsAccount === "CommBank GoalSaver" && S.accounts.indexOf("CommBank Savings") !== -1) {
+      g.savingsAccount = "CommBank Savings"; counts.goal++;
+    }
+  });
+  if (counts.goal) { try { saveGoals(); } catch(e) {} }
+
+  save();
+  try { localStorage.setItem("ldg-mig17", "1"); } catch(e) {}
+  var bits = [];
+  if (counts.flagged) bits.push(counts.flagged + " once off items flagged");
+  if (counts.split) bits.push("PayPal retry split in two");
+  if (counts.shared) bits.push(counts.shared + " Robyn transfers moved to Shared costs");
+  if (counts.loan) bits.push("Mum's loan added as a liability");
+  if (counts.goal) bits.push("Emergency fund now tracks CommBank Savings");
+  if (bits.length) setStatus("v17 tidy up: " + bits.join(" · ") + ". A backup of your transactions was kept on this device.", "ok");
+}
+
 function finishImportMulti(txs, accounts, source) {
   if (!txs.length) { setStatus("Nothing new to import", "err"); return; }
   S.txs = S.txs.concat(txs);
@@ -1353,6 +1503,8 @@ function finishImportMulti(txs, accounts, source) {
     autoPlans.push(tx.description);
   });
 
+  var matched = 0;
+  try { matched = reconcileInstalments(); } catch(e) {}
   save(); render();
   var inputId = source === 'dash' ? 'paste-input-dash' : 'paste-input';
   var el = document.getElementById(inputId);
@@ -1360,6 +1512,7 @@ function finishImportMulti(txs, accounts, source) {
   var accountLabel = accounts.length === 1 ? accounts[0] : accounts.length + " accounts";
   var msg = "Added " + txs.length + " transaction" + (txs.length !== 1 ? "s" : "") + " across " + accountLabel;
   if (autoPlans.length) msg += " · 💳 Instalment plan created for " + autoPlans.join(", ");
+  if (matched) msg += " · ✅ " + matched + " instalment payment" + (matched !== 1 ? "s" : "") + " matched";
   // Balances only count transactions from START_DATE onward, so earlier ones would import but change nothing
   var tooOld = txs.filter(function(t) { return t.date < START_DATE; }).length;
   if (tooOld) msg += " · ⚠️ " + tooOld + " dated before " + START_DATE + " won't affect balances";
@@ -1612,7 +1765,7 @@ function render() {
 
   if (manualAccts.length) {
     acctHtml += manualAccts.map(function(ma) {
-      var typeLabels = { cash:"Cash", savings:"Savings", investment:"Investment", other:"Other" };
+      var typeLabels = { cash:"Cash", savings:"Savings", investment:"Investment", loan:"Loan", other:"Other" };
       var maTxs = S.txs.filter(function(t) { return t.account === ma.name; });
       var maCredits = maTxs.filter(function(t) { return t.type === "credit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
       var maDebits = maTxs.filter(function(t) { return t.type === "debit"; }).reduce(function(s,t) { return s+t.amount; }, 0);
@@ -1624,7 +1777,7 @@ function render() {
         '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleAcct(\'' + ma.name.replace(/'/g,"\\'") + '\')">' +
         '<div><div class="acct-name">' + ma.name + '<span class="manual-acct-badge">' + (typeLabels[ma.type] || "Manual") + '</span></div></div>' +
         '<div style="display:flex;align-items:center;gap:12px">' +
-        '<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">Balance</div><div style="font-size:16px;font-weight:700;color:var(--green)">$' + maBal.toFixed(2) + '</div></div>' +
+        '<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">Balance</div><div style="font-size:16px;font-weight:700;color:' + (maBal >= 0 ? "var(--green)" : "var(--red)") + '">$' + maBal.toFixed(2) + '</div></div>' +
         '<span style="font-size:14px;color:var(--muted);transition:transform 0.2s;display:inline-block;transform:' + (isOpenMa ? "rotate(180deg)" : "") + '">▾</span>' +
         '</div></div>' +
         '<div id="acct-detail-' + safeNameMa + '" style="display:' + (isOpenMa ? "block" : "none") + '">' +
@@ -1839,6 +1992,8 @@ function render() {
 
   // Cat list
   document.getElementById("app-version-footer").textContent = "Pocket Accountant " + APP_VERSION;
+  var verDash = document.getElementById("app-version-dash");
+  if (verDash) verDash.textContent = "Pocket Accountant " + APP_VERSION;
   document.getElementById("cat-list").innerHTML = S.cats.map(function(c) {
     var count = S.txs.filter(function(t) { return t.category === c.id; }).length;
     var isPreset = false;
@@ -1857,7 +2012,7 @@ function renderPieAndUpcoming(spendTxs, totalSpend) {
   var allTxs = periodTxs("all");
   // Category credits (reimbursements) to net off spending
   var creditTxs = allTxs.filter(function(t) {
-    return t.type === "credit" && t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance";
+    return t.type === "credit" && !t.onceOff && t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance";
   });
 
   var byCat = [];
@@ -1997,18 +2152,85 @@ function saveBudget() {
   localStorage.setItem("ldg-budget", JSON.stringify(S.budget));
 }
 
-// The "rolling last 8 weeks" window used for averaging income/spend, capped
-// so it never reaches back before START_DATE (when transaction tracking
-// began). Without this cap, a user with less than 8 weeks of real history
-// still gets divided by a flat 8 weeks, diluting the average with weeks
-// that never had any data to begin with.
+// The "rolling last 8 weeks" window used for averaging income/spend. It is made
+// of whole Tuesday to Monday pay weeks (the current one counts as a full week,
+// because pay lands on the Tuesday) and never reaches back before START_DATE,
+// so a user with less than 8 weeks of history isn't diluted by empty weeks and
+// a part week doesn't make the divisor fractional.
 function rollingWindow() {
   var today = new Date(); today.setHours(0,0,0,0);
-  var eightWeeksAgo = new Date(today); eightWeeksAgo.setDate(today.getDate() - 56);
-  var startBound = new Date(START_DATE); startBound.setHours(0,0,0,0);
-  var start = eightWeeksAgo > startBound ? eightWeeksAgo : startBound;
-  return { today: today, start: start, weeks: Math.max(1, (today - start) / (1000*60*60*24*7)) };
+  var thisTue = new Date(today); thisTue.setDate(today.getDate() - ((today.getDay() + 5) % 7));
+  var start = new Date(thisTue); start.setDate(thisTue.getDate() - 49); // 8 pay weeks including this one
+  var bound = pd(START_DATE); bound.setDate(bound.getDate() - ((bound.getDay() + 5) % 7)); // Tuesday on or before START_DATE
+  if (start < bound) start = bound;
+  var weeks = Math.max(1, Math.round((thisTue - start) / (7 * 86400000)) + 1);
+  return { today: today, start: start, weeks: weeks };
 }
+
+// ── BUDGET LINES ↔ SPENDING CATEGORIES ──────────────────────────
+// Every budget line is compared against one spending category. An explicit
+// choice (linkedCategory) always wins and "none" opts a line out (savings,
+// loan repayments). Otherwise the category is guessed from the line and
+// section names, so a line is never silently left out of the comparison.
+var SKIP_CATS = { "transfers": 1, "income": 1, "opening-balance": 1, "uncategorised": 1 };
+var CAT_GUESS = [
+  ["bills", /rent|electric|water|\bgas\b|internet|phone|mobile|superloop|occom|utilit|insurance|accommodation/],
+  ["subscriptions", /disney|prime|spotify|netflix|google one|microsoft|subscription|hbo|patreon|kayo|stan\b|youtube|apple|nyt|nebula|play pass/],
+  ["health", /sensor|chemist|pharm|doctor|medical|dental|health/],
+  ["groceries", /grocer|supermarket|food/],
+  ["transport", /myki|uber|didi|transport|fuel|petrol|train|taxi|opal|toll|parking/],
+  ["dining", /dining|takeaway|restaurant|eating out|cafe/]
+];
+function catByName(text) {
+  if (!text) return "";
+  for (var i = 0; i < S.cats.length; i++) {
+    var c = S.cats[i];
+    if (SKIP_CATS[c.id]) continue;
+    var cl = c.label.toLowerCase();
+    if (text.indexOf(cl) !== -1 || cl.indexOf(text) !== -1) return c.id;
+  }
+  return "";
+}
+function catByKeyword(text) {
+  for (var i = 0; i < CAT_GUESS.length; i++) {
+    if (CAT_GUESS[i][1].test(text) && S.cats.some(function(c) { return c.id === CAT_GUESS[i][0]; })) return CAT_GUESS[i][0];
+  }
+  return "";
+}
+function budgetItemCategory(sec, item) {
+  if (item.linkedCategory === "none") return "";
+  if (item.linkedCategory) return item.linkedCategory;
+  var il = (item.name || "").toLowerCase();
+  var sl = ((sec && sec.name) || "").toLowerCase();
+  return catByName(il) || catByKeyword(il) || catByName(sl) || catByKeyword(sl) || "";
+}
+function categoryMonthlyBudget(catId) {
+  var tot = 0;
+  S.budget.forEach(function(sec) {
+    if (sec.name === "Income") return;
+    sec.items.forEach(function(item) { if (budgetItemCategory(sec, item) === catId) tot += itemMonthly(item); });
+  });
+  return tot;
+}
+function categoryWeeklyBudget(catId) { return categoryMonthlyBudget(catId) / WPM; }
+
+// Net spending per category for a set of transactions. Debits add, credits
+// (refunds, resale, reimbursements) subtract, and once off items on EITHER side
+// are ignored. Netting happens across the whole set, not week by week, so a
+// refund that lands in a later week still offsets its purchase. Categories floor
+// at zero, except "shared" (settling up with Robyn) which can go negative.
+var NOT_SPEND = { "transfers": 1, "income": 1, "opening-balance": 1 };
+function netSpend(txs) {
+  var by = {};
+  txs.forEach(function(t) {
+    if (t.onceOff || NOT_SPEND[t.category]) return;
+    if ((t.description || "").toLowerCase().indexOf("opening balance") !== -1) return;
+    by[t.category] = (by[t.category] || 0) + (t.type === "debit" ? t.amount : -t.amount);
+  });
+  Object.keys(by).forEach(function(c) { if (c !== "shared" && by[c] < 0) by[c] = 0; });
+  return by;
+}
+function netSpendTotal(by) { return Object.keys(by).reduce(function(s, c) { return s + by[c]; }, 0); }
 
 function getEffectiveMonthlyIncome() {
   var win = rollingWindow();
@@ -2095,7 +2317,9 @@ function renderBudget() {
   var expSecs = S.budget.filter(function(s) { return s.name !== "Income"; });
   var budgetIncome = incomeSec.reduce(function(s, sec) { return s + sectionMonthly(sec, false); }, 0);
   var budgetExpenses = expSecs.reduce(function(s, sec) { return s + sectionMonthly(sec); }, 0);
-  var actualSpend = allTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers"; }).reduce(function(s,t) { return s+t.amount; }, 0);
+  // Net spending for the month: refunds and reimbursements come off, once off items are left out
+  var actualSpend = netSpendTotal(netSpend(allTxs));
+  var onceOffSpend = allTxs.filter(function(t) { return t.onceOff && t.type === "debit" && !NOT_SPEND[t.category]; }).reduce(function(s,t) { return s+t.amount; }, 0);
 
   var effectiveIncome = hasRollingData ? rollingMonthlyIncome : budgetIncome;
   var effectiveSavings = effectiveIncome - budgetExpenses;
@@ -2108,7 +2332,7 @@ function renderBudget() {
     '<div class="budget-income-row"><span class="budget-income-label">Budget income (estimate)</span><span class="budget-income-val">$' + budgetIncome.toFixed(2) + '/mo</span></div>' +
     rollingRow +
     '<div class="budget-vs-row"><span class="budget-vs-label">Budget expenses</span><div class="budget-vs-vals"><span class="budget-vs-actual" style="color:var(--red)">$' + budgetExpenses.toFixed(2) + '/mo</span></div></div>' +
-    '<div class="budget-vs-row"><span class="budget-vs-label">Actual spent this month</span><div class="budget-vs-vals"><span class="budget-vs-actual" style="color:var(--red)">$' + actualSpend.toFixed(2) + '</span></div></div>' +
+    '<div class="budget-vs-row"><span class="budget-vs-label">Actual spent this month' + (onceOffSpend > 0 ? '<div style="font-size:10px;color:var(--muted);font-weight:400">excludes $' + onceOffSpend.toFixed(2) + ' once off</div>' : '') + '</span><div class="budget-vs-vals"><span class="budget-vs-actual" style="color:var(--red)">$' + actualSpend.toFixed(2) + '</span></div></div>' +
     '<div class="budget-vs-row" style="border:none"><span class="budget-vs-label" style="font-weight:600;color:var(--text)">Projected savings</span><div class="budget-vs-vals"><span class="budget-vs-actual" style="color:' + (effectiveSavings >= 0 ? "var(--green)" : "var(--red)") + '">$' + effectiveSavings.toFixed(2) + '/mo</span><span style="font-size:11px;color:var(--muted)">$' + (effectiveSavings / WPM).toFixed(2) + '/wk</span></div></div>';
 
   // Sections
@@ -2141,6 +2365,7 @@ function renderBudget() {
         '<button class="budget-item-del" onclick="deleteBudgetItem(' + si + ',' + ii + ')">×</button>' +
         '</div>' +
         (isPct ? '<div style="font-size:11px;color:var(--accent);padding:0 0 4px 4px">' + item.amount + '% = $' + computedAmt + '/mo</div>' : '') +
+        (isPct && !linkedAcct ? '<div style="font-size:11px;color:#e8c44a;padding:0 0 4px 4px">⚠️ No account set. Pick where this money goes so it can be tracked.</div>' : '') +
         '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:2px">' +
         '<span style="font-size:11px;color:var(--muted);flex-shrink:0">→ Track in:</span>' +
         '<select style="font-size:11px;flex:1;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:' + (linkedAcct ? 'var(--accent)' : 'var(--muted)') + ';font-family:inherit;cursor:pointer" onchange="updateBudgetItem(' + si + ',' + ii + ',\'linkedAccount\',this.value)">' + acctOpts + '</select>' +
@@ -2149,11 +2374,14 @@ function renderBudget() {
         '<span style="font-size:11px;color:var(--muted);flex-shrink:0">→ Category:</span>' +
         (function() {
           var linkedCat = item.linkedCategory || "";
-          var catOpts = '<option value="">No category</option>' +
-            S.cats.filter(function(c){ return c.id !== "transfers" && c.id !== "income" && c.id !== "opening-balance"; }).map(function(c) {
+          var effCat = budgetItemCategory(sec, item);
+          var autoLabel = effCat ? "Auto: " + getCat(effCat).label : "Auto: no match";
+          var catOpts = '<option value=""' + (!linkedCat ? " selected" : "") + '>' + autoLabel + '</option>' +
+            '<option value="none"' + (linkedCat === "none" ? " selected" : "") + '>Not spending (skip)</option>' +
+            S.cats.filter(function(c){ return !SKIP_CATS[c.id]; }).map(function(c) {
               return '<option value="' + c.id + '"' + (c.id === linkedCat ? " selected" : "") + '>' + c.label + '</option>';
             }).join("");
-          return '<select style="font-size:11px;flex:1;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:' + (linkedCat ? 'var(--accent)' : 'var(--muted)') + ';font-family:inherit;cursor:pointer" onchange="updateBudgetItem(' + si + ',' + ii + ',\'linkedCategory\',this.value)">' + catOpts + '</select>';
+          return '<select style="font-size:11px;flex:1;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:' + (effCat ? 'var(--accent)' : 'var(--muted)') + ';font-family:inherit;cursor:pointer" onchange="updateBudgetItem(' + si + ',' + ii + ',\'linkedCategory\',this.value)">' + catOpts + '</select>';
         })() +
         '</div>' +
         '</div>';
@@ -2625,22 +2853,13 @@ function closePaydayOutside(e) { if (e.target === document.getElementById("payda
 function renderSpendingAlerts() {
   var cm = curMonth();
   var allTxs = S.txs.filter(function(t) { return mkey(t.date) === cm; });
-  var spendTxs = allTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers" && t.category !== "opening-balance"; });
+  var monthNet = netSpend(allTxs);
   var alerts = [];
   S.cats.forEach(function(cat) {
     if (cat.id === "transfers" || cat.id === "income" || cat.id === "opening-balance") return;
-    var budgetAmt = 0;
-    S.budget.forEach(function(sec) {
-      sec.items.forEach(function(item) {
-        if (item.linkedCategory === cat.id) {
-          budgetAmt += itemMonthly(item);
-        } else if (!item.linkedCategory && (item.name.toLowerCase().indexOf(cat.label.toLowerCase()) !== -1 || cat.label.toLowerCase().indexOf(item.name.toLowerCase()) !== -1)) {
-          budgetAmt += itemMonthly(item);
-        }
-      });
-    });
+    var budgetAmt = categoryMonthlyBudget(cat.id);
     if (budgetAmt <= 0) return;
-    var actual = spendTxs.filter(function(t) { return t.category === cat.id; }).reduce(function(s,t) { return s+t.amount; }, 0);
+    var actual = monthNet[cat.id] || 0;
     var pct = actual / budgetAmt;
     var key = cat.id + "-" + cm;
     if (S.dismissedAlerts && S.dismissedAlerts[key]) return;
@@ -3170,36 +3389,14 @@ function renderWeeklyTracker() {
   var weekTxs = S.txs.filter(function(t) {
     return t.date >= startStr && t.date <= endStr && t.description.toLowerCase().indexOf("opening balance") === -1;
   });
-  var spendTxs = weekTxs.filter(function(t) { return t.type === "debit" && t.category !== "transfers" && t.category !== "opening-balance"; });
-  var transferTxs = weekTxs.filter(function(t) { return t.type === "debit" && t.category === "transfers"; });
-
-  // Spending by category vs weekly budget (net of credits/reimbursements)
-  var weekCreditTxs = weekTxs.filter(function(t) {
-    return t.type === "credit" && t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance";
-  });
+  // Spending by category vs weekly budget (net of refunds/reimbursements, once offs ignored)
+  var weekNet = netSpend(weekTxs);
   var spendRows = [];
   S.cats.forEach(function(cat) {
     if (cat.id === "transfers" || cat.id === "income" || cat.id === "opening-balance") return;
-    var spent = spendTxs.filter(function(t) { return t.category === cat.id; }).reduce(function(s,t) { return s+t.amount; }, 0);
-    var reimbursed = weekCreditTxs.filter(function(t) { return t.category === cat.id; }).reduce(function(s,t) { return s+t.amount; }, 0);
-    var net = Math.max(0, spent - reimbursed);
+    var net = weekNet[cat.id] || 0;
     if (net <= 0) return;
-    // Find weekly budget for this category using linkedCategory first, then fuzzy match
-    var weeklyBudget = 0;
-    S.budget.forEach(function(sec) {
-      sec.items.forEach(function(item) {
-        if (item.linkedCategory === cat.id) {
-          weeklyBudget += itemMonthly(item) / WPM;
-        } else if (!item.linkedCategory) {
-          var itemLabel = item.name.toLowerCase();
-          var catLabel = cat.label.toLowerCase();
-          if (itemLabel.indexOf(catLabel) !== -1 || catLabel.indexOf(itemLabel) !== -1) {
-            weeklyBudget += itemMonthly(item) / WPM;
-          }
-        }
-      });
-    });
-    spendRows.push({ label: cat.label, color: cat.color, spent: net, budget: weeklyBudget });
+    spendRows.push({ label: cat.label, color: cat.color, spent: net, budget: categoryWeeklyBudget(cat.id) });
   });
 
   // Savings targets — priority allocation using saved order
@@ -3579,8 +3776,9 @@ function renderDashWidgets() {
       try { insts = (getInstalments() || []).filter(function(i){ return i.payments && i.payments.some(function(p){return !p.paid;}); }); } catch(e) {}
       var instHtml = insts.slice(0,3).map(function(i) {
         var next = i.payments.filter(function(p){return !p.paid;})[0];
+        var donePay = i.payments.filter(function(p){return p.paid;}).length;
         return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0">' +
-          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + i.description + '</span>' +
+          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + i.description + ' <span style="color:var(--muted);font-size:11px">' + donePay + '/' + i.payments.length + ' paid</span></span>' +
           '<span style="color:var(--muted);margin-left:8px;flex-shrink:0">' + (next ? next.date + ' · $' + next.amount.toFixed(2) : '') + '</span>' +
         '</div>';
       }).join('');
@@ -3747,21 +3945,7 @@ function getWeekBounds(offsetWeeks) {
 }
 
 function getWeekSpend(startStr, endStr) {
-  var txs = S.txs.filter(function(t) {
-    return t.date >= startStr && t.date <= endStr &&
-      t.type === "debit" && !t.onceOff &&
-      t.category !== "transfers" && t.category !== "opening-balance" &&
-      t.description.toLowerCase().indexOf("opening balance") === -1;
-  });
-  var byCat = {};
-  txs.forEach(function(t) { byCat[t.category] = (byCat[t.category] || 0) + t.amount; });
-  // Net off credits
-  var credits = S.txs.filter(function(t) {
-    return t.date >= startStr && t.date <= endStr && t.type === "credit" &&
-      t.category !== "transfers" && t.category !== "income" && t.category !== "opening-balance";
-  });
-  credits.forEach(function(t) { byCat[t.category] = Math.max(0, (byCat[t.category] || 0) - t.amount); });
-  return byCat;
+  return netSpend(S.txs.filter(function(t) { return t.date >= startStr && t.date <= endStr; }));
 }
 
 function renderBudgetActuals() {
@@ -3776,45 +3960,32 @@ function renderBudgetActuals() {
   }
   if (!weeks.length) { el.innerHTML = '<div class="empty" style="padding:10px 0">Import more transactions to see averages</div>'; return; }
 
-  // Calculate average spend per category across weeks
-  var catTotals = {};
-  var catWeeks = {};
-  weeks.forEach(function(w) {
-    var spend = getWeekSpend(w.startStr, w.endStr);
-    Object.keys(spend).forEach(function(cat) {
-      if (spend[cat] > 0) {
-        catTotals[cat] = (catTotals[cat] || 0) + spend[cat];
-        catWeeks[cat] = (catWeeks[cat] || 0) + 1;
-      }
-    });
-  });
+  // Net spend per category over the whole span, divided by the number of weeks in
+  // that span (not just the weeks a category happened to have spending in).
+  var spanStart = weeks[weeks.length - 1].startStr, spanEnd = weeks[0].endStr;
+  var spanDays = Math.round((pd(spanEnd) - pd(spanStart)) / 86400000) + 1;
+  var nWeeks = Math.max(1, spanDays / 7);
+  var tot = netSpend(S.txs.filter(function(t) { return t.date >= spanStart && t.date <= spanEnd; }));
 
-  // Match against budget categories using linkedCategory first, then name fuzzy match
   var rows = [];
   S.cats.forEach(function(cat) {
-    if (cat.id === "transfers" || cat.id === "income" || cat.id === "opening-balance") return;
-    var avg = catTotals[cat.id] ? catTotals[cat.id] / catWeeks[cat.id] : 0;
-    if (avg <= 0) return;
-    // Sum budget items linked to this category
-    var budget = 0;
-    S.budget.forEach(function(sec) {
-      sec.items.forEach(function(item) {
-        if (item.linkedCategory === cat.id) {
-          budget += itemMonthly(item) / WPM;
-        } else if (!item.linkedCategory) {
-          // Fallback to name fuzzy match only if no linkedCategory set
-          var il = item.name.toLowerCase(); var cl = cat.label.toLowerCase();
-          if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / WPM;
-        }
-      });
-    });
-    rows.push({ cat: cat, avg: avg, budget: budget, weeks: catWeeks[cat.id] || 0 });
+    if (SKIP_CATS[cat.id]) return;
+    var avg = (tot[cat.id] || 0) / nWeeks;
+    if (avg <= 0.005) return;
+    rows.push({ cat: cat, avg: avg, budget: categoryWeeklyBudget(cat.id) });
   });
   rows.sort(function(a,b) { return b.avg - a.avg; });
 
   if (!rows.length) { el.innerHTML = '<div class="empty" style="padding:10px 0">No spending data yet</div>'; return; }
 
-  el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Based on ' + weeks.length + ' week' + (weeks.length !== 1 ? "s" : "") + ' of data</div>' +
+  var totalAvg = netSpendTotal(tot) / nWeeks;
+  var totalBudget = S.cats.reduce(function(s, c) { return SKIP_CATS[c.id] ? s : s + categoryWeeklyBudget(c.id); }, 0);
+  var unbudgeted = rows.filter(function(r) { return r.budget <= 0; }).reduce(function(s, r) { return s + r.avg; }, 0);
+  var summary = '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:12px">' +
+    '<span>Net spending</span><span>$' + totalAvg.toFixed(0) + '/wk <span style="font-weight:400;color:var(--muted)">vs $' + totalBudget.toFixed(0) + ' budgeted</span></span></div>' +
+    (unbudgeted > 0.5 ? '<div style="font-size:11px;color:var(--muted);margin:-6px 0 12px">$' + unbudgeted.toFixed(0) + '/wk is in categories with no budget line</div>' : '');
+
+  el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Based on ' + weeks.length + ' week' + (weeks.length !== 1 ? "s" : "") + ' of data</div>' + summary +
     rows.map(function(r) {
       var diff = r.budget > 0 ? r.avg - r.budget : null;
       var pct = r.budget > 0 ? Math.min(200, (r.avg / r.budget) * 100) : null;
@@ -3876,14 +4047,7 @@ function renderWeekHistoryModal() {
   var catRows = [];
   S.cats.forEach(function(cat) {
     if (!spend[cat.id] || spend[cat.id] <= 0) return;
-    var budget = 0;
-    S.budget.forEach(function(sec) {
-      sec.items.forEach(function(item) {
-        var il = item.name.toLowerCase(); var cl = cat.label.toLowerCase();
-        if (il.indexOf(cl) !== -1 || cl.indexOf(il) !== -1) budget += itemMonthly(item) / WPM;
-      });
-    });
-    catRows.push({ cat: cat, spent: spend[cat.id], budget: budget });
+    catRows.push({ cat: cat, spent: spend[cat.id], budget: categoryWeeklyBudget(cat.id) });
   });
   catRows.sort(function(a,b) { return b.spent - a.spent; });
 
@@ -3987,7 +4151,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v13";',
+    'var CACHE = "ledger-v14";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
