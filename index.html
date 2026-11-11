@@ -571,6 +571,21 @@ html,body{height:100%;background:var(--bg);font-family:-apple-system,'Helvetica 
         <div id="cat-list"></div>
       </div>
       <div class="card">
+        <div class="card-label">Chat sync</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">Transactions Claude adds from chat arrive on their own when you open the app. Needs a read only GitHub token for your private data repo.</p>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">GitHub token</div>
+        <input type="password" id="sync-token" autocomplete="off" placeholder="github_pat_..." style="width:100%;margin-bottom:8px">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input type="text" id="sync-repo" placeholder="owner/repo" style="flex:1;min-width:0">
+          <input type="text" id="sync-path" placeholder="inbox.json" style="flex:1;min-width:0">
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button class="add-btn" style="flex:1" onclick="saveSyncSettings()">Save</button>
+          <button class="add-btn" style="flex:1" onclick="syncNow(false)">Sync now</button>
+        </div>
+        <div id="sync-status" style="font-size:12px;color:var(--muted);line-height:1.6"></div>
+      </div>
+      <div class="card">
         <div class="card-label">Data</div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Export range (leave blank for everything)</div>
         <div style="display:flex;gap:8px;margin-bottom:8px">
@@ -857,7 +872,7 @@ var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-15"; // first day with real data (earlier days only diluted the income average)
 var WPM = 52 / 12; // weeks per month, used for EVERY weekly<->monthly conversion so round-trips are exact
-var APP_VERSION = "v17"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v18"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -910,6 +925,8 @@ function loadData() {
   } catch(e) { document.body.classList.add("light-mode"); }
   render();
   checkPayday();
+  try { renderSyncSettings(); } catch(e) {}
+  try { syncAuto(); } catch(e) {}
 }
 
 // Older saves predate newer built-in categories (e.g. "shared"); add any that are missing.
@@ -1517,10 +1534,122 @@ function finishImportMulti(txs, accounts, source) {
   var tooOld = txs.filter(function(t) { return t.date < START_DATE; }).length;
   if (tooOld) msg += " · ⚠️ " + tooOld + " dated before " + START_DATE + " won't affect balances";
   setStatus(msg, tooOld ? "err" : "ok");
-  if (source !== 'dash') swDrop("dash", "Dashboard");
+  if (source !== 'dash' && source !== 'sync') swDrop("dash", "Dashboard");
 }
 
 
+
+// ---- Chat sync: pulls batches Claude writes to a private inbox file on GitHub ----
+var SYNC_DEFAULT_REPO = "lachlanpcron/Ledger";
+var SYNC_DEFAULT_PATH = "inbox.json";
+var syncBusy = false, syncLastTry = 0;
+
+function syncGet(k, def) { try { var v = localStorage.getItem(k); return v === null ? def : v; } catch(e) { return def; } }
+function syncSet(k, v) { try { localStorage.setItem(k, v); } catch(e) {} }
+function syncAppliedIds() { try { return JSON.parse(syncGet("ldg-sync-applied", "[]")) || []; } catch(e) { return []; } }
+
+function syncSay(msg, type) {
+  var el = document.getElementById("sync-status");
+  if (el) { el.textContent = msg; el.style.color = type === "err" ? "var(--red)" : "var(--muted)"; }
+}
+
+function renderSyncSettings() {
+  var t = document.getElementById("sync-token"); if (!t) return;
+  t.value = syncGet("ldg-sync-token", "");
+  document.getElementById("sync-repo").value = syncGet("ldg-sync-repo", SYNC_DEFAULT_REPO);
+  document.getElementById("sync-path").value = syncGet("ldg-sync-path", SYNC_DEFAULT_PATH);
+  var last = syncGet("ldg-sync-last", "");
+  syncSay(last ? "Last synced " + last : (t.value ? "Token saved. Tap Sync now." : "No token yet."), "ok");
+}
+
+function saveSyncSettings() {
+  syncSet("ldg-sync-token", document.getElementById("sync-token").value.trim());
+  syncSet("ldg-sync-repo", document.getElementById("sync-repo").value.trim() || SYNC_DEFAULT_REPO);
+  syncSet("ldg-sync-path", document.getElementById("sync-path").value.trim() || SYNC_DEFAULT_PATH);
+  syncSay("Saved.", "ok");
+  setStatus("Chat sync settings saved", "ok");
+}
+
+// Builds transaction objects from import blocks (same mapping as the paste importer).
+function txsFromBlocks(blocks) {
+  var out = [];
+  blocks.forEach(function(block) {
+    var account = block.account || "Unknown Account";
+    (block.transactions || []).forEach(function(t, i) {
+      var cat = getCat(t.category).id === (t.category || "") ? t.category : "uncategorised";
+      var o = {
+        id: Date.now() + "-" + Math.random().toString(36).slice(2) + "-" + i,
+        description: t.description || "Unknown",
+        amount: parseFloat(t.amount) || 0,
+        date: t.date || dateStr(new Date()),
+        type: t.type === "credit" ? "credit" : "debit",
+        category: cat,
+        account: account
+      };
+      if (t.onceOff) o.onceOff = true;
+      if (t.skipInstalment) o.skipInstalment = true;
+      out.push(o);
+    });
+  });
+  return out;
+}
+
+// Applies one inbox batch. Possible duplicates are skipped unless the batch sets "force": true.
+function applySyncBatch(batch) {
+  var blocks = Array.isArray(batch["import"]) ? batch["import"] : [];
+  if (!blocks.length || !blocks.every(function(b) { return b && Array.isArray(b.transactions); })) throw new Error("batch " + batch.id + " is malformed");
+  var all = txsFromBlocks(blocks);
+  var clean = batch.force ? all : all.filter(function(t) { return !isDuplicate(t); });
+  var accounts = blocks.map(function(b) { return b.account || "Unknown Account"; })
+    .filter(function(a, i, arr) { return arr.indexOf(a) === i; });
+  if (clean.length) finishImportMulti(clean, accounts, "sync");
+  return { added: clean.length, skipped: all.length - clean.length };
+}
+
+function syncNow(auto) {
+  var token = syncGet("ldg-sync-token", "");
+  if (!token) { if (!auto) syncSay("Add a token first.", "err"); return Promise.resolve(); }
+  if (syncBusy) return Promise.resolve();
+  syncBusy = true; syncLastTry = Date.now();
+  var repo = syncGet("ldg-sync-repo", SYNC_DEFAULT_REPO), path = syncGet("ldg-sync-path", SYNC_DEFAULT_PATH);
+  if (!auto) syncSay("Checking for new transactions...", "ok");
+  return fetch("https://api.github.com/repos/" + repo + "/contents/" + path, {
+    cache: "no-store",
+    headers: { "Authorization": "Bearer " + token, "Accept": "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28" }
+  }).then(function(r) {
+    if (r.status === 401) throw new Error("token rejected (expired or wrong)");
+    if (r.status === 403) throw new Error("token not allowed to read that repo");
+    if (r.status === 404) throw new Error("inbox file not found, check repo and path");
+    if (!r.ok) throw new Error("GitHub said " + r.status);
+    return r.text();
+  }).then(function(text) {
+    var data = JSON.parse(text);
+    var batches = Array.isArray(data) ? data : (data.batches || []);
+    var applied = syncAppliedIds(), added = 0, skipped = 0, nb = 0;
+    for (var i = 0; i < batches.length; i++) {
+      var b = batches[i];
+      if (!b || !b.id || applied.indexOf(b.id) !== -1) continue;
+      var res = applySyncBatch(b);
+      applied.push(b.id); syncSet("ldg-sync-applied", JSON.stringify(applied));
+      added += res.added; skipped += res.skipped; nb++;
+    }
+    var when = new Date().toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+    syncSet("ldg-sync-last", when);
+    var msg = nb ? "Synced from chat: " + added + " new transaction" + (added !== 1 ? "s" : "") + (skipped ? " (" + skipped + " skipped as duplicates)" : "") : "Up to date.";
+    syncSay(msg + ". Last synced " + when, "ok");
+    if (nb) setStatus(msg, skipped ? "err" : "ok");
+  }).catch(function(e) {
+    syncSay("Sync failed: " + (e && e.message ? e.message : e), "err");
+    if (!auto) setStatus("Sync failed: " + (e && e.message ? e.message : e), "err");
+  }).then(function() { syncBusy = false; });
+}
+
+function syncAuto() {
+  if (!syncGet("ldg-sync-token", "")) return;
+  if (Date.now() - syncLastTry < 30000) return;
+  syncNow(true);
+}
+document.addEventListener("visibilitychange", function() { if (document.visibilityState === "visible") syncAuto(); });
 
 function isDuplicate(tx) {
   return S.txs.some(function(existing) {
@@ -4151,7 +4280,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v14";',
+    'var CACHE = "ledger-v15";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
