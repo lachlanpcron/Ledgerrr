@@ -872,7 +872,7 @@ var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-15"; // first day with real data (earlier days only diluted the income average)
 var WPM = 52 / 12; // weeks per month, used for EVERY weekly<->monthly conversion so round-trips are exact
-var APP_VERSION = "v19"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v20"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -1594,16 +1594,67 @@ function txsFromBlocks(blocks) {
   return out;
 }
 
-// Applies one inbox batch. Possible duplicates are skipped unless the batch sets "force": true.
+// Finds transactions matching a chat sync "match" object (every given field must agree).
+function syncFindTxs(m) {
+  return S.txs.filter(function(t) {
+    if (m.id && t.id !== m.id) return false;
+    if (m.account && t.account !== m.account) return false;
+    if (m.date && t.date !== m.date) return false;
+    if (m.type && t.type !== m.type) return false;
+    if (m.amount !== undefined && Math.abs(t.amount - parseFloat(m.amount)) > 0.005) return false;
+    if (m.description && (t.description || "").toLowerCase().indexOf(String(m.description).toLowerCase()) === -1) return false;
+    return true;
+  });
+}
+
+// Corrections from chat: {op:"edit", match:{...}, set:{category,description,onceOff,date,amount}} or {op:"delete", match:{...}}.
+// An op only runs when it matches exactly one transaction (or "all": true); otherwise it is left alone and reported.
+function applySyncOps(ops) {
+  var edited = 0, deleted = 0, missed = 0;
+  ops.forEach(function(op) {
+    var m = op && op.match;
+    if (!m || (!m.id && !m.date && !m.description && m.amount === undefined)) { missed++; return; }
+    var hits = syncFindTxs(m);
+    if (!hits.length || (hits.length > 1 && !op.all)) { missed++; return; }
+    if (op.op === "delete") {
+      var ids = {}; hits.forEach(function(t) { ids[t.id] = true; });
+      S.txs = S.txs.filter(function(t) { return !ids[t.id]; });
+      deleted += hits.length; return;
+    }
+    if (op.op !== "edit" || !op.set) { missed++; return; }
+    var set = op.set;
+    if (set.category !== undefined && getCat(set.category).id !== set.category) { missed++; return; }
+    hits.forEach(function(t) {
+      if (set.category !== undefined) t.category = set.category;
+      if (set.description !== undefined) t.description = String(set.description);
+      if (set.date !== undefined) t.date = String(set.date);
+      if (set.amount !== undefined) t.amount = Math.abs(parseFloat(set.amount)) || t.amount;
+      if (set.onceOff === true) t.onceOff = true;
+      if (set.onceOff === false) delete t.onceOff;
+    });
+    edited += hits.length;
+  });
+  if (edited || deleted) { try { reconcileInstalments(); } catch(e) {} save(); render(); }
+  return { edited: edited, deleted: deleted, missed: missed };
+}
+
+// Applies one inbox batch: imports first, then any corrections. Possible duplicates are skipped unless the batch sets "force": true.
 function applySyncBatch(batch) {
   var blocks = Array.isArray(batch["import"]) ? batch["import"] : [];
-  if (!blocks.length || !blocks.every(function(b) { return b && Array.isArray(b.transactions); })) throw new Error("batch " + batch.id + " is malformed");
-  var all = txsFromBlocks(blocks);
-  var clean = batch.force ? all : all.filter(function(t) { return !isDuplicate(t); });
-  var accounts = blocks.map(function(b) { return b.account || "Unknown Account"; })
-    .filter(function(a, i, arr) { return arr.indexOf(a) === i; });
-  if (clean.length) finishImportMulti(clean, accounts, "sync");
-  return { added: clean.length, skipped: all.length - clean.length };
+  var ops = Array.isArray(batch.ops) ? batch.ops : [];
+  if (!blocks.length && !ops.length) throw new Error("batch " + batch.id + " is malformed");
+  if (blocks.length && !blocks.every(function(b) { return b && Array.isArray(b.transactions); })) throw new Error("batch " + batch.id + " is malformed");
+  var added = 0, skipped = 0;
+  if (blocks.length) {
+    var all = txsFromBlocks(blocks);
+    var clean = batch.force ? all : all.filter(function(t) { return !isDuplicate(t); });
+    var accounts = blocks.map(function(b) { return b.account || "Unknown Account"; })
+      .filter(function(a, i, arr) { return arr.indexOf(a) === i; });
+    if (clean.length) finishImportMulti(clean, accounts, "sync");
+    added = clean.length; skipped = all.length - clean.length;
+  }
+  var r = ops.length ? applySyncOps(ops) : { edited: 0, deleted: 0, missed: 0 };
+  return { added: added, skipped: skipped, edited: r.edited, deleted: r.deleted, missed: r.missed };
 }
 
 function syncNow(auto) {
@@ -1625,19 +1676,25 @@ function syncNow(auto) {
   }).then(function(text) {
     var data = JSON.parse(text);
     var batches = Array.isArray(data) ? data : (data.batches || []);
-    var applied = syncAppliedIds(), added = 0, skipped = 0, nb = 0;
+    var applied = syncAppliedIds(), added = 0, skipped = 0, edited = 0, deleted = 0, missed = 0, nb = 0;
     for (var i = 0; i < batches.length; i++) {
       var b = batches[i];
       if (!b || !b.id || applied.indexOf(b.id) !== -1) continue;
       var res = applySyncBatch(b);
       applied.push(b.id); syncSet("ldg-sync-applied", JSON.stringify(applied));
-      added += res.added; skipped += res.skipped; nb++;
+      added += res.added; skipped += res.skipped; edited += res.edited; deleted += res.deleted; missed += res.missed; nb++;
     }
     var when = new Date().toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
     syncSet("ldg-sync-last", when);
-    var msg = nb ? "Synced from chat: " + added + " new transaction" + (added !== 1 ? "s" : "") + (skipped ? " (" + skipped + " skipped as duplicates)" : "") : "Up to date.";
+    var parts = [];
+    if (added || !(edited || deleted || missed)) parts.push(added + " new transaction" + (added !== 1 ? "s" : ""));
+    if (edited) parts.push(edited + " corrected");
+    if (deleted) parts.push(deleted + " removed");
+    if (skipped) parts.push(skipped + " skipped as duplicates");
+    if (missed) parts.push(missed + " correction" + (missed !== 1 ? "s" : "") + " not matched");
+    var msg = nb ? "Synced from chat: " + parts.join(", ") : "Up to date";
     syncSay(msg + ". Last synced " + when, "ok");
-    if (nb) setStatus(msg, skipped ? "err" : "ok");
+    if (nb) setStatus(msg, (skipped || missed) ? "err" : "ok");
   }).catch(function(e) {
     syncSay("Sync failed: " + (e && e.message ? e.message : e), "err");
     if (!auto) setStatus("Sync failed: " + (e && e.message ? e.message : e), "err");
@@ -4280,7 +4337,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v16";',
+    'var CACHE = "ledger-v17";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
