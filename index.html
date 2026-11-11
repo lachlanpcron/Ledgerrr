@@ -872,7 +872,7 @@ var DEBT_ACCTS = ["CommBank Mastercard","StepPay"];
 var MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 var START_DATE = "2026-09-15"; // first day with real data (earlier days only diluted the income average)
 var WPM = 52 / 12; // weeks per month, used for EVERY weekly<->monthly conversion so round-trips are exact
-var APP_VERSION = "v18"; // bump this by one every time an edited index.html is shipped
+var APP_VERSION = "v19"; // bump this by one every time an edited index.html is shipped
 
 var S = {
   txs: [], accounts: Object.keys(DEFAULT_START_BAL), cats: JSON.parse(JSON.stringify(PRESETS)),
@@ -1363,7 +1363,7 @@ function reconcileInstalments() {
   var used = {}, changed = 0;
   plans.forEach(function(pl) { (pl.payments || []).forEach(function(p) { if (p.txId) used[p.txId] = true; }); });
   var ordered = plans.slice().sort(function(a, b) { return a.purchaseDate < b.purchaseDate ? -1 : a.purchaseDate > b.purchaseDate ? 1 : 0; });
-  [0.005, 0.02].forEach(function(tol, pass) {
+  [0.005, 0.02, 0.05].forEach(function(tol, pass) {
     ordered.forEach(function(pl) {
       var cands = instRepaymentCandidates(pl.provider);
       (pl.payments || []).forEach(function(p) {
@@ -4280,7 +4280,7 @@ document.addEventListener("click", function(e) {
 // PWA: register service worker for offline support
 if ("serviceWorker" in navigator) {
   var swCode = [
-    'var CACHE = "ledger-v15";',
+    'var CACHE = "ledger-v16";',
     'var ASSETS = ["/Ledgerrr/", "/Ledgerrr/index.html"];',
     'self.addEventListener("install", function(e) {',
     '  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));',
